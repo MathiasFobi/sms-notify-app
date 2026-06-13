@@ -1,0 +1,5 @@
+enablePrePostScripts: true
+ignoredBuiltDependencies:
+  - sharp
+  - unrs-resolver
+onlyBuiltDependencies: '["esbuild"]'
