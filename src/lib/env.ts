@@ -3,7 +3,7 @@ import { z } from "zod";
 /**
  * Validated, typed environment variables.
  *
- * - Server-only secrets (DATABASE_URL, NEXTAUTH_SECRET, STRIPE_SECRET_KEY,
+ * - Server-only secrets (DATABASE_URL, AUTH_SECRET, STRIPE_SECRET_KEY,
  *   STRIPE_WEBHOOK_SECRET, TWILIO_AUTH_TOKEN) must NEVER be bundled into
  *   client code. Only reference `env` from server components, server actions,
  *   and API route handlers.
@@ -13,6 +13,10 @@ import { z } from "zod";
  *
  * Throws at import time if a required variable is missing or malformed, so
  * the app fails fast on boot rather than at first use.
+ *
+ * `AUTH_SECRET` is the NextAuth v5 secret. The older `NEXTAUTH_SECRET`
+ * name is also accepted because the wider Next.js ecosystem hasn't fully
+ * migrated. We treat either as valid.
  */
 const EnvSchema = z.object({
   NODE_ENV: z
@@ -25,10 +29,11 @@ const EnvSchema = z.object({
     .min(1, "DATABASE_URL is required")
     .url("DATABASE_URL must be a valid URL"),
 
-  // Auth
-  NEXTAUTH_SECRET: z
+  // Auth — NextAuth v5 reads AUTH_SECRET; NEXTAUTH_SECRET is the
+  // v4 name. We coalesce them below so callers only see one.
+  AUTH_SECRET: z
     .string()
-    .min(32, "NEXTAUTH_SECRET must be at least 32 characters"),
+    .min(32, "AUTH_SECRET must be at least 32 characters"),
 
   // Stripe
   STRIPE_SECRET_KEY: z
@@ -59,6 +64,13 @@ const EnvSchema = z.object({
 export type Env = z.infer<typeof EnvSchema>;
 
 function parseEnv(): Env {
+  // Coalesce NEXTAUTH_SECRET -> AUTH_SECRET if AUTH_SECRET is missing.
+  // Done before zod validation so callers can name the variable
+  // however they like.
+  if (!process.env["AUTH_SECRET"] && process.env["NEXTAUTH_SECRET"]) {
+    process.env["AUTH_SECRET"] = process.env["NEXTAUTH_SECRET"];
+  }
+
   const parsed = EnvSchema.safeParse(process.env);
   if (!parsed.success) {
     // Pretty-print all issues, then throw. The first failure stops the

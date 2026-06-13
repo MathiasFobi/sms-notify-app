@@ -16,7 +16,7 @@ const testEnv = process.env as unknown as Record<string, string | undefined>;
 testEnv["NODE_ENV"] ??= "test";
 testEnv["DATABASE_URL"] ??=
   "postgres://test:test@localhost:5432/sms_notify_app_test";
-testEnv["NEXTAUTH_SECRET"] ??= "test-secret-that-is-at-least-32-chars-long";
+testEnv["AUTH_SECRET"] ??= "test-secret-that-is-at-least-32-chars-long";
 testEnv["STRIPE_SECRET_KEY"] ??= "sk_test_placeholder";
 testEnv["STRIPE_WEBHOOK_SECRET"] ??= "whsec_placeholder";
 testEnv["TWILIO_ACCOUNT_SID"] ??= "ACplaceholder";

@@ -37,12 +37,15 @@ Required keys (all server-side unless noted):
 | Key                    | Notes                                                     |
 | ---------------------- | --------------------------------------------------------- |
 | `DATABASE_URL`         | Postgres connection string                                |
-| `NEXTAUTH_SECRET`      | 32+ random chars (`openssl rand -base64 32`)              |
+| `AUTH_SECRET`          | 32+ random chars (`openssl rand -base64 32`); NextAuth v5 |
 | `STRIPE_SECRET_KEY`    | `sk_test_...` for development                             |
 | `STRIPE_WEBHOOK_SECRET`| `whsec_...` from the Stripe dashboard                     |
 | `TWILIO_ACCOUNT_SID`   | Starts with `AC`                                          |
 | `TWILIO_AUTH_TOKEN`    | Twilio auth token (secret)                                |
 | `APP_URL`              | Public origin, e.g. `http://localhost:3000`               |
+
+`NEXTAUTH_SECRET` is also accepted for back-compat with NextAuth v4 — it
+is auto-promoted to `AUTH_SECRET` at boot.
 
 `src/lib/env.ts` validates the environment at boot — missing or malformed
 keys throw immediately with a clear error.
@@ -86,25 +89,77 @@ src/
 ├── app/
 │   ├── layout.tsx        # root layout (Tailwind shell)
 │   ├── page.tsx          # / marketing landing
-│   ├── app/              # /app — client portal
+│   ├── login/page.tsx    # /login — credentials form (client)
+│   ├── signup/page.tsx   # /signup — signup form (client)
+│   ├── app/              # /app — client portal (requires auth)
+│   │   ├── layout.tsx
+│   │   ├── page.tsx      # redirects to /app/dashboard
+│   │   └── dashboard/page.tsx
+│   ├── admin/            # /admin — operator console (requires admin)
 │   │   ├── layout.tsx
 │   │   └── page.tsx
-│   └── admin/            # /admin — operator console
-│       ├── layout.tsx
-│       └── page.tsx
+│   └── api/
+│       ├── auth/
+│       │   ├── [...nextauth]/route.ts   # NextAuth catch-all
+│       │   └── signup/route.ts          # POST /api/auth/signup
+├── auth.config.ts        # Edge-safe NextAuth v5 config (no DB)
+├── auth.ts               # NextAuth v5 instance (Drizzle adapter, credentials)
+├── proxy.ts              # Edge proxy (formerly middleware.ts)
+├── types/next-auth.d.ts  # NextAuth session/user type augmentations
 ├── db/
-│   ├── schema.ts         # 11-table Drizzle schema
+│   ├── schema.ts         # 13-table Drizzle schema
 │   ├── index.ts          # singleton `db` (postgres-js + drizzle)
 │   └── schema.test.ts
-└── lib/
-    ├── env.ts            # zod-validated process.env
-    ├── env.test.ts
-    ├── cn.ts             # tailwind-merge class helper
-    └── cn.test.ts
+├── lib/
+│   ├── env.ts            # zod-validated process.env
+│   ├── env.test.ts
+│   ├── cn.ts             # tailwind-merge class helper
+│   ├── cn.test.ts
+│   ├── auth.ts           # re-exports auth/signIn/signOut/handlers + requireUser()
+│   ├── auth.test.ts      # requireUser redirect tests
+│   ├── password.ts       # bcrypt cost-10 hash + verify
+│   ├── password.test.ts
+│   └── actions/
+│       └── auth.ts       # signUpAction, signInAction, signOutAction
+└── test/
+    └── db.ts             # PGlite-backed test DB factory
 drizzle.config.ts         # drizzle-kit config (postgresql, ./src/db/schema.ts)
 vitest.config.ts
 vitest.setup.ts
 ```
+
+## Auth
+
+NextAuth v5 (beta) with the Drizzle adapter and a Credentials provider.
+Sessions are signed JWTs in HTTP-only cookies — no DB sessions in v1.
+
+Public auth API (`src/lib/auth.ts`):
+
+- `auth()` — current session, `null` if not signed in
+- `signIn()` — programmatic sign-in
+- `signOut()` — clear the session
+- `requireUser()` — throws a `redirect("/login?callbackUrl=...")` if no session
+- `handlers` — the catch-all route handler (see `app/api/auth/[...nextauth]/route.ts`)
+
+Server actions (`src/lib/actions/auth.ts`):
+
+- `signUpAction` — form action for `/signup`; creates user + account, auto-signs-in
+- `signInAction` — form action for `/login`; calls NextAuth credentials
+- `signOutAction` — clears the session and redirects to `/`
+
+### Routes
+
+| Path                        | Auth      | Notes                                    |
+| --------------------------- | --------- | ---------------------------------------- |
+| `/`                         | public    | marketing landing                        |
+| `/login`                    | public    | credentials login form                   |
+| `/signup`                   | public    | signup form                              |
+| `/app`                      | redirect  | redirects to `/app/dashboard` if signed in, else `/login` |
+| `/app/dashboard`            | required  | protected by `requireUser()`             |
+| `/app/*`                    | required  | enforced by the edge proxy               |
+| `/admin`                    | admin     | enforced by the edge proxy (role check)  |
+| `/api/auth/signup`          | public    | POST: create user + auto-signin          |
+| `/api/auth/[...nextauth]`   | public    | NextAuth catch-all (signin, signout, csrf, session, ...) |
 
 ## Conventions
 

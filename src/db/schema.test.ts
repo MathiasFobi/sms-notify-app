@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   accounts,
+  authAccounts,
+  authVerificationTokens,
   contacts,
   contactGroups,
   creditTransactions,
@@ -22,6 +24,8 @@ import {
 describe("db schema", () => {
   const tables = {
     users,
+    authAccounts,
+    authVerificationTokens,
     accounts,
     creditTransactions,
     senderIds,
@@ -34,8 +38,8 @@ describe("db schema", () => {
     webhookEvents,
   } as const;
 
-  it("exports all 11 expected tables", () => {
-    expect(Object.keys(tables)).toHaveLength(11);
+  it("exports all 13 expected tables", () => {
+    expect(Object.keys(tables)).toHaveLength(13);
   });
 
   it.each(Object.entries(tables))(

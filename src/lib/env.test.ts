@@ -7,7 +7,7 @@ describe("env validation", () => {
     // actual values vary per environment, but the keys are stable.
     for (const key of [
       "DATABASE_URL",
-      "NEXTAUTH_SECRET",
+      "AUTH_SECRET",
       "STRIPE_SECRET_KEY",
       "STRIPE_WEBHOOK_SECRET",
       "TWILIO_ACCOUNT_SID",

@@ -73,6 +73,12 @@ export const webhookSourceEnum = pgEnum("webhook_source", ["stripe", "twilio"]);
  * `twilioAuthToken` is stored encrypted (envelope-encrypted with a server-side
  * KMS key in production). The `text` column holds the ciphertext; we keep
  * encryption in the application layer to avoid coupling schema to key rotation.
+ *
+ * `emailVerified` and `image` are nullable Auth.js columns — the
+ * DrizzleAdapter writes them when the credentials / OAuth / email-link
+ * flows run. For v1 we use the credentials provider and set
+ * `emailVerified` at signup time (US-002 defers real email verification
+ * to a later story), but we keep the column for adapter compatibility.
  */
 export const users = pgTable(
   "users",
@@ -82,6 +88,8 @@ export const users = pgTable(
     passwordHash: text("password_hash").notNull(),
     name: text("name").notNull(),
     role: userRoleEnum("role").notNull().default("user"),
+    emailVerified: timestamp("email_verified", { withTimezone: true }),
+    image: text("image"),
     twilioAccountSid: text("twilio_account_sid"),
     twilioAuthToken: text("twilio_auth_token"), // encrypted ciphertext
     twilioFromNumber: text("twilio_from_number"),
@@ -90,6 +98,57 @@ export const users = pgTable(
       .defaultNow(),
   },
   (table) => [uniqueIndex("users_email_idx").on(table.email)],
+);
+
+/**
+ * Auth.js OAuth account links (one row per (provider, providerAccountId)).
+ * Only used if/when we add an OAuth provider on top of credentials.
+ * Named `authAccounts` to avoid collision with our billing `accounts` table.
+ */
+export const authAccounts = pgTable(
+  "authAccounts",
+  {
+    userId: serial("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    type: text("type").notNull(),
+    provider: text("provider").notNull(),
+    providerAccountId: text("providerAccountId").notNull(),
+    refresh_token: text("refresh_token"),
+    access_token: text("access_token"),
+    expires_at: integer("expires_at"),
+    token_type: text("token_type"),
+    scope: text("scope"),
+    id_token: text("id_token"),
+    session_state: text("session_state"),
+  },
+  (table) => [
+    uniqueIndex("authAccounts_provider_idx").on(
+      table.provider,
+      table.providerAccountId,
+    ),
+    index("authAccounts_user_id_idx").on(table.userId),
+  ],
+);
+
+/**
+ * Auth.js verification tokens (magic-link / email verification flows).
+ * Not used by the credentials provider, but required by the DrizzleAdapter
+ * type signature.
+ */
+export const authVerificationTokens = pgTable(
+  "authVerificationTokens",
+  {
+    identifier: text("identifier").notNull(),
+    token: text("token").notNull(),
+    expires: timestamp("expires", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    uniqueIndex("authVerificationTokens_pk").on(
+      table.identifier,
+      table.token,
+    ),
+  ],
 );
 
 /**
@@ -414,6 +473,13 @@ export const inboundMessagesRelations = relations(inboundMessages, ({ one }) => 
   }),
 }));
 
+export const authAccountsRelations = relations(authAccounts, ({ one }) => ({
+  user: one(users, {
+    fields: [authAccounts.userId],
+    references: [users.id],
+  }),
+}));
+
 // ============================================================================
 // Convenience: keep the `now()` default in code in case we ever need it
 // outside of column defaults.
@@ -429,6 +495,10 @@ export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 export type Account = typeof accounts.$inferSelect;
 export type NewAccount = typeof accounts.$inferInsert;
+export type AuthAccount = typeof authAccounts.$inferSelect;
+export type NewAuthAccount = typeof authAccounts.$inferInsert;
+export type AuthVerificationToken = typeof authVerificationTokens.$inferSelect;
+export type NewAuthVerificationToken = typeof authVerificationTokens.$inferInsert;
 export type CreditTransaction = typeof creditTransactions.$inferSelect;
 export type NewCreditTransaction = typeof creditTransactions.$inferInsert;
 export type SenderId = typeof senderIds.$inferSelect;
