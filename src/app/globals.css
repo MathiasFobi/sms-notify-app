@@ -3,11 +3,66 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+
+  /* shadcn-style semantic tokens for portal UI.
+     Sidebar + dialog use these so we can keep the Tailwind v4
+     @theme block small and re-skin without rebuilding classes. */
+  --card: #ffffff;
+  --card-foreground: #171717;
+  --popover: #ffffff;
+  --popover-foreground: #171717;
+  --primary: #18181b;
+  --primary-foreground: #fafafa;
+  --secondary: #f4f4f5;
+  --secondary-foreground: #18181b;
+  --muted: #f4f4f5;
+  --muted-foreground: #71717a;
+  --accent: #f4f4f5;
+  --accent-foreground: #18181b;
+  --destructive: #dc2626;
+  --destructive-foreground: #fafafa;
+  --border: #e4e4e7;
+  --input: #e4e4e7;
+  --ring: #18181b;
+
+  --sidebar-background: #fafafa;
+  --sidebar-foreground: #18181b;
+  --sidebar-muted: #71717a;
+  --sidebar-accent: #f4f4f5;
+  --sidebar-accent-foreground: #18181b;
+  --sidebar-border: #e4e4e7;
+  --sidebar-active: #18181b;
+  --sidebar-active-foreground: #fafafa;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-sidebar-background: var(--sidebar-background);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-muted: var(--sidebar-muted);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-active: var(--sidebar-active);
+  --color-sidebar-active-foreground: var(--sidebar-active-foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
@@ -16,6 +71,33 @@
   :root {
     --background: #0a0a0a;
     --foreground: #ededed;
+
+    --card: #0f0f10;
+    --card-foreground: #ededed;
+    --popover: #0f0f10;
+    --popover-foreground: #ededed;
+    --primary: #ededed;
+    --primary-foreground: #0a0a0a;
+    --secondary: #27272a;
+    --secondary-foreground: #ededed;
+    --muted: #27272a;
+    --muted-foreground: #a1a1aa;
+    --accent: #27272a;
+    --accent-foreground: #ededed;
+    --destructive: #7f1d1d;
+    --destructive-foreground: #fafafa;
+    --border: #27272a;
+    --input: #27272a;
+    --ring: #d4d4d8;
+
+    --sidebar-background: #0a0a0a;
+    --sidebar-foreground: #ededed;
+    --sidebar-muted: #a1a1aa;
+    --sidebar-accent: #18181b;
+    --sidebar-accent-foreground: #ededed;
+    --sidebar-border: #27272a;
+    --sidebar-active: #fafafa;
+    --sidebar-active-foreground: #0a0a0a;
   }
 }
 

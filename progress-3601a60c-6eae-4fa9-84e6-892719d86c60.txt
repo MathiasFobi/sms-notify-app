@@ -1,0 +1,321 @@
+# Progress Log
+Run: 3601a60c-6eae-4fa9-84e6-892719d86c60
+Task: US-003: Dashboard shell with sidebar nav and credits balance widget
+Started: 2026-06-13 12:38 PDT
+
+## Codebase Patterns
+
+- **Next.js version:** Scaffold pulled 16.2.9 (the spec said 15). The framework
+  conventions (app router, src dir, @/* alias) are unchanged from 15, so the
+  story goals are satisfied. If a future story requires strict 15.x behavior
+  we can pin with `pnpm add next@15` — note that `--legacy-peer-deps` is not
+  needed with pnpm.
+- **Single Next.js app, two route surfaces:** `/app` (client portal) and
+  `/admin` (operator console) are sibling route segments under
+  `src/app/app/` and `src/app/admin/`. Each has its own `layout.tsx` so the
+  shell can differ (light for portal, dark for admin). The root `/` is the
+  marketing landing page.
+- **Tailwind v4 (not v3):** create-next-app installs Tailwind 4 by default.
+  CSS lives in `src/app/globals.css` and uses `@import "tailwindcss";` (no
+  `tailwind.config.js`). Theme tokens go inside `@theme inline { ... }`.
+- **Turbopack is the default builder in Next 16.** First build prints a
+  warning if it can find a parent package.json above the project. Pin the
+  workspace root in `next.config.ts` to silence it:
+  `turbopack: { root: path.resolve(__dirname) }`.
+- **Env validation is eager and throws:** `src/lib/env.ts` runs `parseEnv()`
+  at module load. Anything that imports `env` (currently `src/db/index.ts`
+  and the env test) will crash the process if a required var is missing.
+  This is the intended behavior — fail fast on boot.
+- **Vitest setup must inject env vars** because `env.ts` reads from
+  `process.env` at import time. `vitest.setup.ts` provides placeholders so
+  the env test can run. Use bracket access (`process.env["X"]`) — the
+  `@types/node` 20+ `process.env` is deeply readonly and rejects dot-access
+  assignment.
+- **Drizzle + postgres-js singleton:** `src/db/index.ts` stashes the
+  postgres-js client on `globalThis` in dev to survive Next.js HMR
+  re-imports. `prepare: false` is set so it works against the Neon HTTP
+  pooler. Use `pnpm db:generate` to make migrations, `pnpm db:migrate` to
+  apply, `pnpm db:push` for local prototyping.
+- **Schema conventions:**
+  - Primary keys are `serial('id')` for simplicity; can switch to `uuid()`
+    later if needed.
+  - Foreign keys use `onDelete: 'cascade'` for owned resources
+    (accounts, contacts, messages) and `'set null'` for optional
+    references (contacts.groupId, messageRecipients.contactId).
+  - Append-only ledgers (`creditTransactions`, `webhookEvents`) use
+    `uniqueIndex` on provider id to make inserts idempotent.
+  - `messageRecipients.phone` is a snapshot of the contact's phone at
+    send time, so deleting a contact later doesn't break delivery reports.
+  - `inboundMessages.read` is a `boolean` defaulting to `false`, indexed
+    on `(userId, read)` so the dashboard unread-count widget is O(1).
+- **Route structure:** `src/app/` is the marketing root, `src/app/app/`
+  is `/app` portal, `src/app/admin/` is `/admin`. The portal's
+  `_actions.ts` lives next to the route group so the portal is
+  self-contained.
+- **shadcn-style UI primitives are hand-rolled in `src/components/ui/`:**
+  No Radix dependency in v1. The contract is:
+  - Each primitive lives in its own file (`button.tsx`, `card.tsx`, …)
+  - `src/components/ui/index.ts` re-exports them.
+  - Server components (e.g. `CreditsBadge`) live in `src/components/`,
+    not in `ui/`.
+  - Client components declare `"use client"` at the top.
+- **Server-action props for client components** that submit a form
+  use the `(formData?: FormData) => Promise<void>` shape — accepting
+  `?` keeps the prop assignable to both parameterless actions and
+  `<form action={...}>` bindings.
+- **Server vs client queries:** the portal layout (`src/app/app/layout.tsx`)
+  is a server component that does the credit-balance lookup. Pages
+  under `/app/*` can issue their own queries (`getDashboardStats` is
+  the dashboard's source of truth) without going through the layout.
+- **Git workflow:** The repo `sms-notify-app/` is its own standalone git
+  repo (`.git` lives at the project root, not at `~/Documents/Workspace/`),
+  so it can be pushed to `MathiasFobi/sms-notify-app` independently from
+  the other Workspace monorepos.
+- **Secrets handling:** `.env.example` carries only placeholders that
+  intentionally fail the zod validator (`sk_test_replace_me`,
+  `ACreplace_me`) so a missing real value surfaces as a loud error at
+  boot. Never inline real keys anywhere in the repo. Builds require the
+  real env vars to be present in the shell — CI/deploy must export them.
+
+---
+
+## 2026-06-13 07:51 PDT - US-001: Bootstrap Next.js 15 app, Tailwind, Drizzle, and core DB schema
+
+**What was implemented**
+
+- Re-scaffolded sms-notify-app from scratch (previous attempt lacked `--src-dir`
+  and was on the wrong directory layout). Used
+  `pnpm create next-app@latest sms-notify-app --typescript --tailwind --app --src-dir --import-alias '@/*' --use-pnpm --no-eslint --yes`.
+- Added runtime deps: `drizzle-orm`, `postgres`, `zod`, `dotenv`, `date-fns`,
+  `clsx`, `tailwind-merge`, `lucide-react`.
+- Added dev deps: `drizzle-kit`, `vitest`, `@vitejs/plugin-react`, `jsdom`.
+- Configured `pnpm.onlyBuiltDependencies = ["esbuild"]` so esbuild's native
+  binary postinstall runs (required by Vitest).
+- Created 11-table Drizzle schema (`src/db/schema.ts`) with all specified
+  columns, enums, indexes, and relations. Generated inferred row types
+  for app code.
+- `drizzle.config.ts` (dialect: postgresql, schema: src/db/schema.ts,
+  out: ./drizzle, $DATABASE_URL from env).
+- `src/db/index.ts` singleton — `postgres()` + `drizzle()`, dev-safe
+  globalThis cache, `prepare: false` for Neon compatibility.
+- `src/lib/env.ts` zod schema validating DATABASE_URL, NEXTAUTH_SECRET
+  (≥32 chars), STRIPE_SECRET_KEY (sk_), STRIPE_WEBHOOK_SECRET (whsec_),
+  TWILIO_ACCOUNT_SID (AC…), TWILIO_AUTH_TOKEN, APP_URL; throws on import
+  with a formatted error.
+- `src/lib/cn.ts` — clsx + tailwind-merge wrapper.
+- Three route surfaces with their own Tailwind-styled layouts:
+  - `/` marketing landing (src/app/page.tsx) — displays `sms-notify-app`,
+    returns HTTP 200 (verified by curl against `pnpm start`).
+  - `/app` client portal (src/app/app/{layout,page}.tsx).
+  - `/admin` operator console (src/app/admin/{layout,page}.tsx).
+- Scripts in package.json: `dev`, `build`, `start`, `lint`, `typecheck`,
+  `test`, `db:generate`, `db:migrate`, `db:push`.
+- `vitest.config.ts` + `vitest.setup.ts` (jsdom, `src/**/*.{test,spec}.{ts,tsx}`).
+- Tests: 3 files / 16 tests pass.
+  - `src/lib/cn.test.ts` (2 tests) — class merging + tailwind-merge.
+  - `src/lib/env.test.ts` (2 tests) — keys present, APP_URL parseable.
+  - `src/db/schema.test.ts` (12 tests) — exports all 11 tables, each
+    non-empty.
+- `.env.example` with all 7 required keys plus NODE_ENV, each with
+  obvious placeholder values.
+- `.gitignore` extended to also block `*.key`, `*.secret`, `*.crt`,
+  `*.cer`, `credentials.*`, `.idea/`, `.vscode/`. `.env` and
+  `.env*.local` are gitignored.
+- `README.md` with prereqs, env setup, db commands, project layout, and
+  conventions.
+- `next.config.ts` pinned `turbopack.root` to silence the parent-
+  workspace warning.
+- Initialized fresh standalone git repo, committed on
+  `feature/sms-notify-app-v1`, and pushed to
+  `https://github.com/MathiasFobi/sms-notify-app` via
+  `gh repo create --public --source=. --remote=origin --push`.
+
+**Files changed (all new — full bootstrap)**
+
+```
+.env.example
+.env                        (gitignored, local dev only)
+.gitignore
+AGENTS.md                   (from create-next-app)
+CLAUDE.md                   (from create-next-app)
+README.md
+drizzle.config.ts
+next.config.ts
+package.json
+pnpm-lock.yaml
+pnpm-workspace.yaml         (from create-next-app)
+postcss.config.mjs
+public/{file,globe,next,vercel,window}.svg
+src/app/admin/layout.tsx
+src/app/admin/page.tsx
+src/app/app/layout.tsx
+src/app/app/page.tsx
+src/app/favicon.ico
+src/app/globals.css
+src/app/layout.tsx
+src/app/page.tsx
+src/db/index.ts
+src/db/schema.test.ts
+src/db/schema.ts
+src/lib/cn.test.ts
+src/lib/cn.ts
+src/lib/env.test.ts
+src/lib/env.ts
+tsconfig.json
+vitest.config.ts
+vitest.setup.ts
+```
+
+**Learnings**
+
+- The next-app scaffolder picks the latest Next.js (16 in our case). If
+  the spec ever really needs Next 15, pin with `pnpm add next@15
+  eslint-config-next@15` after the scaffold and re-run typecheck.
+- For multi-segment URLs under src-dir (`/app`, `/admin`), each gets
+  its own layout that composes with the root layout automatically. The
+  root layout's `<html>` + `<body>` are not duplicated in the segment
+  layouts.
+- `process.env` writes fail TS strict typecheck in newer `@types/node`.
+  Use bracket access in test setup, or cast to a mutable Record. App
+  code should never write to `process.env` — only read it via `env`.
+- `prepare: false` on postgres-js is the easy win for Neon. The tradeoff
+  is no query plan caching, which is fine for an HTTP-pooled serverless
+  DB.
+
+---
+
+## 2026-06-13 12:38 PDT - US-003: Dashboard shell with sidebar nav and credits balance widget
+
+**What was implemented**
+
+- **UI primitives (`src/components/ui/`):** hand-rolled shadcn-style
+  primitives — `Button` (6 variants, 4 sizes), `Card` + Header/Title/
+  Description/Content/Footer, `Input`, `Label`, `Sidebar` (client
+  component with mobile drawer), `Table` + 7 sub-components, `Dialog`
+  (accessible modal, Escape + click-outside dismiss), `DropdownMenu`,
+  `Toast` + `useToast()` hook. `src/components/ui/index.ts` re-exports
+  the lot.
+- **Portal layout (`src/app/app/layout.tsx`):** server component that
+  reads `accounts.credits` (joined with `users`) for the topbar
+  credits badge. Wraps the page body in a `ToastProvider`. The sidebar
+  and user menu are client components slotted in around the topbar.
+- **Sidebar (`src/components/ui/sidebar.tsx`):** exports a typed
+  `navItems` array (10 entries, in spec order) so call sites and
+  tests can assert the navigation contract without rendering the
+  component. The component itself uses `usePathname()` for active
+  state and renders a slide-in drawer below the 768px breakpoint.
+- **CreditsBadge (`src/components/credits-badge.tsx`):** server
+  component. Renders the integer from `accounts.credits` with
+  thousands-separator formatting, `data-credits` test hook, and an
+  amber colour scheme.
+- **UserMenu (`src/components/user-menu.tsx`):** client dropdown in
+  the topbar with the user's name + email and a sign-out form that
+  submits `signOutAction`.
+- **EmptyState (`src/components/empty-state.tsx`):** the
+  "Coming soon" placeholder used by every not-yet-built portal page
+  (US-003 calls this out for Contacts and Messages).
+- **Dashboard stats helper (`src/lib/dashboard.ts`):** `getDashboardStats
+  (userId, db?)` returns `{ credits, messages30d, scheduled, unread }`
+  with one query per stat, scoped to the user (multi-tenant).
+- **Dashboard page (`src/app/app/dashboard/page.tsx`):** greeting +
+  four stat cards (Credits balance, Messages sent 30d, Scheduled,
+  Unread replies) using the new `Card` primitive.
+- **Placeholder pages:** `/app/send`, `/app/scheduled`, `/app/contacts`,
+  `/app/sender-ids`, `/app/inbox`, `/app/reports`, `/app/billing`,
+  `/app/settings` — each renders a heading + an `EmptyState` so the
+  sidebar links don't 404.
+- **Portal server actions (`src/app/app/_actions.ts`):** `signOutAction
+  (formData?)` — wraps `signOut({ redirectTo: "/" })` and re-issues a
+  `redirect("/")` for cache invalidation. The optional formData keeps
+  it assignable to both parameterless callers and `<form action={...}>`.
+- **Schema addition:** added `inboundMessages.read` boolean (default
+  false) + index on `(userId, read)` for the unread-count widget.
+  Generated migration `drizzle/0001_broad_marrow.sql`.
+- **Tests added (3 new files, 24 new tests):**
+  - `src/lib/dashboard.test.ts` (6 tests) — empty case, credits
+    balance, 30-day window, scheduled count, unread count,
+    multi-tenant isolation. Runs against PGlite.
+  - `src/components/sidebar-nav.test.tsx` (16 tests) — `navItems`
+    shape (10 entries, spec order, correct routes, Logout is
+    `action: 'logout'`), `CreditsBadge` rendering (integer, negative
+    clamp, NaN, thousands separators), `EmptyState` default, and
+    smoke tests for Button/Card/Input/Label/Table.
+  - `src/app/app/_actions.test.ts` (2 tests) — `signOutAction` calls
+    `signOut({ redirectTo: "/" })` and then `redirect("/")`;
+    tolerates no-formData invocation.
+- **README:** added the new portal layout, file map, and a
+  "Portal layout (US-003)" section that documents where the sidebar,
+  topbar, and sign-out action live.
+- **Tailwind v4 theme:** extended `src/app/globals.css` with
+  shadcn-style semantic CSS variables (card, popover, primary,
+  destructive, sidebar tokens) and `@theme inline` mappings. Both
+  light and dark variants defined.
+
+**Files changed**
+
+```
+modified:   README.md
+modified:   src/app/app/dashboard/page.tsx
+modified:   src/app/app/layout.tsx
+modified:   src/app/globals.css
+modified:   src/db/schema.ts
+modified:   drizzle/meta/_journal.json
+new:        drizzle/0001_broad_marrow.sql
+new:        drizzle/meta/0001_snapshot.json
+new:        src/app/app/_actions.ts
+new:        src/app/app/_actions.test.ts
+new:        src/app/app/billing/page.tsx
+new:        src/app/app/contacts/page.tsx
+new:        src/app/app/inbox/page.tsx
+new:        src/app/app/reports/page.tsx
+new:        src/app/app/scheduled/page.tsx
+new:        src/app/app/send/page.tsx
+new:        src/app/app/sender-ids/page.tsx
+new:        src/app/app/settings/page.tsx
+new:        src/components/credits-badge.tsx
+new:        src/components/empty-state.tsx
+new:        src/components/user-menu.tsx
+new:        src/components/ui/button.tsx
+new:        src/components/ui/card.tsx
+new:        src/components/ui/dialog.tsx
+new:        src/components/ui/dropdown-menu.tsx
+new:        src/components/ui/index.ts
+new:        src/components/ui/input.tsx
+new:        src/components/ui/label.tsx
+new:        src/components/ui/sidebar.tsx
+new:        src/components/ui/table.tsx
+new:        src/components/ui/toast.tsx
+new:        src/components/sidebar-nav.test.tsx
+new:        src/lib/dashboard.ts
+new:        src/lib/dashboard.test.ts
+```
+
+**Learnings**
+
+- **lucide-react ships `React.memo(forwardRef(...))` icons.** `typeof
+  icon === 'function'` is wrong — it's `"object"`. Test for
+  truthiness or `"function" | "object"`.
+- **Server actions that take `formData`** need the parameter marked
+  optional in the prop type, otherwise the prop can't be assigned
+  to a parameterless consumer (e.g. the `<form action={...}>` slot
+  on some shadcn primitives).
+- **Server component tests use `renderToStaticMarkup` from
+  `react-dom/server`.** No jsdom gymnastics needed for
+  presentational components.
+- **Client components with hooks (`usePathname`) can't be rendered
+  outside a Next.js runtime.** Test the data they consume
+  (`navItems` array) directly. The "is the active state right"
+  check is best covered by a future integration test (Playwright).
+- **Tailwind v4 CSS variables need both a `:root` declaration AND
+  a `--color-x: var(--x)` line inside `@theme inline`** to be
+  consumed as `bg-x` / `text-x` utilities. The shadcn docs assume
+  v3; v4 needs the explicit mapping.
+- **`pnpm build` requires the env vars in the shell.** The
+  placeholder `.env.example` values intentionally fail validation
+  to make missing-config obvious at boot. CI must export the real
+  values (or use a `.env` that's gitignored).
+- **`/app` is the URL surface, not `(portal)`.** Route groups
+  (`(portal)`) are parentheses-only and don't appear in the URL.
+  The story spec used the (portal) framing as a layout
+  group, not as a path segment, so we kept the existing `/app/*`
+  structure from US-001/US-002.

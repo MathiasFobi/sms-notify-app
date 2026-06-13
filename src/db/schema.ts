@@ -342,6 +342,13 @@ export const inboundMessages = pgTable(
     toNumber: text("to_number").notNull(),
     body: text("body").notNull(),
     twilioMessageSid: text("twilio_message_sid").notNull(),
+    /**
+     * Per-recipient read flag for the dashboard inbox. Defaults to
+     * `false` so newly-received webhooks are unread until the
+     * client marks them. Indexed on (userId, read) so the
+     * "unread count" widget on the dashboard is O(1).
+     */
+    read: boolean("read").notNull().default(false),
     receivedAt: timestamp("received_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -349,6 +356,7 @@ export const inboundMessages = pgTable(
   (table) => [
     uniqueIndex("inbound_messages_twilio_sid_idx").on(table.twilioMessageSid),
     index("inbound_messages_user_id_idx").on(table.userId),
+    index("inbound_messages_user_read_idx").on(table.userId, table.read),
   ],
 );
 

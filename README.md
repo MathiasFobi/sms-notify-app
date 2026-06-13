@@ -92,9 +92,18 @@ src/
 │   ├── login/page.tsx    # /login — credentials form (client)
 │   ├── signup/page.tsx   # /signup — signup form (client)
 │   ├── app/              # /app — client portal (requires auth)
-│   │   ├── layout.tsx
+│   │   ├── layout.tsx    # sidebar + topbar + toast provider
 │   │   ├── page.tsx      # redirects to /app/dashboard
-│   │   └── dashboard/page.tsx
+│   │   ├── _actions.ts   # portal server actions (signOutAction)
+│   │   ├── dashboard/page.tsx
+│   │   ├── send/page.tsx
+│   │   ├── scheduled/page.tsx
+│   │   ├── contacts/page.tsx
+│   │   ├── sender-ids/page.tsx
+│   │   ├── inbox/page.tsx
+│   │   ├── reports/page.tsx
+│   │   ├── billing/page.tsx
+│   │   └── settings/page.tsx
 │   ├── admin/            # /admin — operator console (requires admin)
 │   │   ├── layout.tsx
 │   │   └── page.tsx
@@ -106,6 +115,22 @@ src/
 ├── auth.ts               # NextAuth v5 instance (Drizzle adapter, credentials)
 ├── proxy.ts              # Edge proxy (formerly middleware.ts)
 ├── types/next-auth.d.ts  # NextAuth session/user type augmentations
+├── components/
+│   ├── ui/               # shadcn-style primitives (Button, Card, Input, ...)
+│   │   ├── button.tsx
+│   │   ├── card.tsx
+│   │   ├── input.tsx
+│   │   ├── label.tsx
+│   │   ├── sidebar.tsx
+│   │   ├── table.tsx
+│   │   ├── dialog.tsx
+│   │   ├── dropdown-menu.tsx
+│   │   ├── toast.tsx
+│   │   └── index.ts      # barrel export
+│   ├── credits-badge.tsx # topbar credit-balance chip (server component)
+│   ├── user-menu.tsx     # topbar dropdown (client component)
+│   ├── empty-state.tsx   # reusable "Coming soon" placeholder
+│   └── sidebar-nav.test.tsx
 ├── db/
 │   ├── schema.ts         # 13-table Drizzle schema
 │   ├── index.ts          # singleton `db` (postgres-js + drizzle)
@@ -119,6 +144,8 @@ src/
 │   ├── auth.test.ts      # requireUser redirect tests
 │   ├── password.ts       # bcrypt cost-10 hash + verify
 │   ├── password.test.ts
+│   ├── dashboard.ts      # dashboard stat-card counts (credits, 30d, scheduled, unread)
+│   ├── dashboard.test.ts
 │   └── actions/
 │       └── auth.ts       # signUpAction, signInAction, signOutAction
 └── test/
@@ -155,11 +182,41 @@ Server actions (`src/lib/actions/auth.ts`):
 | `/login`                    | public    | credentials login form                   |
 | `/signup`                   | public    | signup form                              |
 | `/app`                      | redirect  | redirects to `/app/dashboard` if signed in, else `/login` |
-| `/app/dashboard`            | required  | protected by `requireUser()`             |
-| `/app/*`                    | required  | enforced by the edge proxy               |
+| `/app/dashboard`            | required  | four stat cards (credits, 30d, scheduled, unread) |
+| `/app/send`                 | required  | send form (placeholder, US-013)          |
+| `/app/scheduled`            | required  | scheduled sends list (placeholder)      |
+| `/app/contacts`             | required  | contacts list (placeholder, US-023)      |
+| `/app/sender-ids`           | required  | sender ID list (placeholder, US-028)     |
+| `/app/inbox`                | required  | inbound replies (placeholder, US-032)   |
+| `/app/reports`              | required  | delivery reports (placeholder, US-036)  |
+| `/app/billing`              | required  | credit purchase + history (placeholder, US-006) |
+| `/app/settings`             | required  | user settings (placeholder)              |
 | `/admin`                    | admin     | enforced by the edge proxy (role check)  |
 | `/api/auth/signup`          | public    | POST: create user + auto-signin          |
 | `/api/auth/[...nextauth]`   | public    | NextAuth catch-all (signin, signout, csrf, session, ...) |
+
+### Portal layout (US-003)
+
+The client portal at `/app/*` is wrapped in a server-rendered
+layout that owns:
+
+- A sidebar (`src/components/ui/sidebar.tsx`) listing the 10
+  navigation items (Dashboard, Send SMS, Scheduled, Contacts,
+  Sender IDs, Inbox, Reports, Billing, Settings, Logout). The
+  sidebar is a client component that highlights the active
+  route via `usePathname()` and collapses to a slide-in drawer
+  below the 768px breakpoint.
+- A topbar containing the credit-balance badge
+  (`src/components/credits-badge.tsx`, a server component that
+  reads `accounts.credits`) and a user dropdown
+  (`src/components/user-menu.tsx`).
+- A `ToastProvider` so client components on any portal page
+  can dispatch toasts via `useToast()`.
+
+Sign-out is implemented as a server action
+(`src/app/app/_actions.ts`) — the sidebar's Logout entry
+submits a `<form action={signOutAction}>` and NextAuth's
+`signOut()` handles the cookie + redirect.
 
 ## Conventions
 
