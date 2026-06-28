@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   accounts,
+  checkoutSessions,
   contacts,
   contactGroups,
   creditTransactions,
@@ -32,10 +33,11 @@ describe("db schema", () => {
     inboundMessages,
     scheduledJobs,
     webhookEvents,
+    checkoutSessions,
   } as const;
 
-  it("exports all 11 expected tables", () => {
-    expect(Object.keys(tables)).toHaveLength(11);
+  it("exports all 12 expected tables", () => {
+    expect(Object.keys(tables)).toHaveLength(12);
   });
 
   it.each(Object.entries(tables))(
