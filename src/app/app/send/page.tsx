@@ -2,24 +2,25 @@ import Link from "next/link";
 import { cn } from "@/lib/cn";
 import { requireUser } from "@/lib/auth/require-user";
 import { getTestDb } from "@/test/db";
-import { SendSmsForm } from "./_components/send-form";
+import { SendTabs } from "./_components/send-tabs";
 
 /**
- * /app/send — single-recipient SMS compose page.
+ * /app/send — SMS compose page.
  *
  * Server Component:
  *   1. Resolve the current user via `requireUser()`.
  *   2. Read their `sender_ids` (any status) — the select needs values
  *      even before an admin has approved them; the from-number is
  *      just a label here, the mock provider doesn't care.
- *   3. Read `users.twilio_from_number` so the form can preselect
+ *   3. Read `users.twilio_from_number` so the forms can preselect
  *      the user's current default.
- *   4. Render `<SendSmsForm senderIds={...} defaultFromNumber={...} />`
- *      which is a client component handling the submit + error +
- *      success states.
+ *   4. Render `<SendTabs senderIds={...} defaultFromNumber={...} />`
+ *      which is a client component switching between the single-send
+ *      form (`SendSmsForm`) and the bulk-send form (`BulkSendSmsForm`).
  *
- * The actual send is delegated to `sendSmsAction` in
- * `src/lib/actions/send.ts`.
+ * The actual sends are delegated to `sendSmsAction` in
+ * `src/lib/actions/send.ts` and `sendBulkSmsAction` in
+ * `src/lib/actions/bulk-send.ts`.
  */
 
 export const dynamic = "force-dynamic";
@@ -62,8 +63,9 @@ export default async function SendPage() {
           Send an SMS
         </h1>
         <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-          Send a single SMS through the configured provider. The mock
-          provider records the message in-memory and returns a{" "}
+          Send a single SMS through the configured provider, or upload a
+          CSV to blast the same body to many recipients. The mock provider
+          records the message in-memory and returns a{" "}
           <span className="font-mono">mock_&lt;uuid&gt;</span> provider id.
           Need a sender ID first?{" "}
           <Link
@@ -82,14 +84,15 @@ export default async function SendPage() {
           "dark:border-zinc-800 dark:bg-zinc-950",
         )}
       >
-        <SendSmsForm
+        <SendTabs
           senderIds={senderIdsForForm}
           defaultFromNumber={defaultFromNumber}
         />
       </section>
 
       <p className="mt-4 text-xs text-zinc-500 dark:text-zinc-500">
-        Each send costs 1 credit. Make sure you have credits available — visit{" "}
+        Each send costs 1 credit. Make sure you have credits available —
+        visit{" "}
         <Link
           href="/app/billing"
           className="underline"

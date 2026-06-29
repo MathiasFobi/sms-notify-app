@@ -70,6 +70,39 @@ describe("/app/send page", () => {
     expect(html).toContain("Send SMS"); // submit button label
   });
 
+  it("renders both the single-send and bulk-send tabs by default", async () => {
+    await db.insert("sender_ids", {
+      user_id: 1,
+      value: "+15550000001",
+      status: "approved",
+    });
+
+    const html = await renderPage();
+
+    // Both tabs are visible.
+    expect(html).toContain("Single send");
+    expect(html).toContain("Bulk send (CSV)");
+    expect(html).toContain('data-testid="send-tab-single"');
+    expect(html).toContain('data-testid="send-tab-bulk"');
+  });
+
+  it("defaults to the single-send panel on first render", async () => {
+    await db.insert("sender_ids", {
+      user_id: 1,
+      value: "+15550000001",
+      status: "approved",
+    });
+
+    const html = await renderPage();
+
+    // The single-send panel is mounted (has 'name="to"'); the bulk-send
+    // panel is NOT mounted (no 'name="csv"' file input).
+    expect(html).toContain('data-testid="send-panel-single"');
+    expect(html).toContain('name="to"');
+    expect(html).not.toContain('name="csv"');
+    expect(html).not.toContain('data-testid="bulk-csv-input"');
+  });
+
   it("renders the character counter at 0 / 1600 on first render", async () => {
     const html = await renderPage();
     expect(html).toContain("0 / 1600");
