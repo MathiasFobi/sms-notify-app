@@ -139,7 +139,8 @@ CREATE TABLE "inbound_messages" (
   "to_number" text NOT NULL,
   "body" text NOT NULL,
   "twilio_message_sid" text NOT NULL,
-  "received_at" timestamp with time zone DEFAULT now() NOT NULL
+  "received_at" timestamp with time zone DEFAULT now() NOT NULL,
+  "read" boolean DEFAULT false NOT NULL
 );
 
 CREATE TABLE "scheduled_jobs" (

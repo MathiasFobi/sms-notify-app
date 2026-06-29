@@ -292,6 +292,11 @@ export const inboundMessages = pgTable(
     receivedAt: timestamp("received_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // Read state for the inbox view (`/app/inbox`). Defaults to
+    // `false` so a freshly-arrived inbound is unread until the user
+    // explicitly marks it. Flipped via `markReadAction` /
+    // `markAllReadAction` in `src/lib/actions/inbox.ts`.
+    read: boolean("read").notNull().default(false),
   },
   (table) => [
     uniqueIndex("inbound_messages_twilio_sid_idx").on(table.twilioMessageSid),

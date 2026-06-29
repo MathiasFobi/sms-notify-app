@@ -1,0 +1,1 @@
+ALTER TABLE "inbound_messages" ADD COLUMN "read" boolean DEFAULT false NOT NULL;
