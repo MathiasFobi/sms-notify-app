@@ -21,7 +21,7 @@ import {
   markAllReadAction,
   markReadAction,
 } from "@/lib/actions/inbox";
-import { getDashboardStats } from "@/lib/dashboard";
+import { __getDashboardStatsInternal, getDashboardStats } from "@/lib/dashboard";
 
 /**
  * Inbox action tests.
@@ -215,18 +215,18 @@ describe("inbox actions", () => {
     });
 
     it("drops the dashboard unread count to 0 after marking all read", async () => {
-      // Use the singleton so getDashboardStats reads the same data.
+      // Use the singleton so the dashboard helper reads the same data.
       const db = getTestDb();
       await seedInbound(db, { userId: 1, fromPhone: "+15551111111", body: "a" });
       await seedInbound(db, { userId: 1, fromPhone: "+15552222222", body: "b" });
       await seedInbound(db, { userId: 1, fromPhone: "+15553333333", body: "c" });
 
-      const before = await getDashboardStats(1, db);
+      const before = await __getDashboardStatsInternal({ userId: 1, db });
       expect(before.unread).toBe(3);
 
       await __markAllReadInternal({ userId: 1, db });
 
-      const after = await getDashboardStats(1, db);
+      const after = await __getDashboardStatsInternal({ userId: 1, db });
       expect(after.unread).toBe(0);
     });
   });
@@ -292,7 +292,7 @@ describe("inbox actions", () => {
       expect(after.every((r) => r.read === true)).toBe(true);
 
       // Dashboard unread count is now 0.
-      const stats = await getDashboardStats(1, db);
+      const stats = await getDashboardStats(1);
       expect(stats.unread).toBe(0);
     });
 
