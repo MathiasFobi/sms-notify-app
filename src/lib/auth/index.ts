@@ -12,3 +12,4 @@ export {
   requireUser,
   type RequireUserResult,
 } from "./require-user";
+export { requireAdmin } from "./require-admin";
