@@ -23,8 +23,13 @@
  */
 
 import { requireUser } from "@/lib/auth/require-user";
-import { senderIds, users } from "@/db/schema";
 import { getTestDb, type TestDb } from "@/test/db";
+
+// NOTE: This is a `"use server"` file. Next.js 16 only allows async
+// functions (and type-only exports) from such files — re-exporting
+// schema table objects would fail the build if a downstream module
+// statically pulled those references in. Importers grab the schema
+// directly from "@/db/schema" instead.
 
 // ============================================================================
 // Public server actions
@@ -180,7 +185,4 @@ export async function __setDefaultSenderIdInternal(
   return { twilioFromNumber: value };
 }
 
-// Re-export schema references so tests can use them without a second import
-// (kept private to this module's consumers via the `__` name prefix on
-// internals, but useful for the page.tsx server component too).
-export { senderIds, users };
+// (No schema re-exports here — see the NOTE at the top of the file.)

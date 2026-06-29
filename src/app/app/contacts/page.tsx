@@ -15,27 +15,25 @@ import {
   renameContactGroupAction,
 } from "@/lib/actions/contact-groups";
 import { CreateContactGroupForm } from "./_components/create-contact-group-form";
+import { AddContactForm } from "./_components/add-contact-form";
+import { ImportContactsForm } from "./_components/import-contacts-form";
+import { ContactRow } from "./_components/contact-row";
 
 /**
- * /app/contacts — manage contact groups (US-007) and (later, US-008)
- * the contacts themselves.
+ * /app/contacts — manage contact groups (US-007) and contacts
+ * (US-008) for the current user.
  *
- * For US-007 the page renders:
- *   1. A "Create contact group" form (client component).
- *   2. A table of the user's existing groups with inline rename
- *      (per-row form, inline `<input>`) and delete (per-row button)
- *      actions.
- *   3. A placeholder dashed panel where the contacts table will land
- *      in US-008 — keeps the page renderable and testable while we
- *      wait for that story.
+ * Renders two stacked sections:
+ *   1. Contact groups — create / rename / delete.
+ *   2. Contacts — add one at a time, upload a CSV, download the
+ *      full list as CSV, and edit / delete individual rows.
  *
- * Server actions are bound via inline `async function <name>Action`
- * declarations below — Next.js 16 lets you co-locate `"use server"`
- * functions inside a server component file and pass them as
- * `<form action={...}>` props. The actual logic lives in
- * `src/lib/actions/contact-groups.ts` and is exercised directly in
- * the test suite; the wrappers here just translate `FormData` to
- * typed args.
+ * Server actions for the groups section are bound via inline
+ * `async function <name>Action` declarations (Next.js 16 pattern).
+ * The contacts section uses client component rows for the
+ * per-row edit toggle so we can keep the page itself a Server
+ * Component (no need to ship the whole contacts table to the
+ * browser just to toggle a "Save" button).
  */
 
 export const dynamic = "force-dynamic";
@@ -43,6 +41,15 @@ export const dynamic = "force-dynamic";
 interface ContactGroupRow {
   id: number;
   name: string;
+  createdAt: Date;
+}
+
+interface ContactRowShape {
+  id: number;
+  phone: string;
+  firstName: string | null;
+  lastName: string | null;
+  groupId: number | null;
   createdAt: Date;
 }
 
@@ -79,6 +86,25 @@ export default async function ContactsPage() {
       createdAt: r.created_at as Date,
     }))
     .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+
+  const contactRows = await db.select("contacts", { user_id: user.id });
+  const contacts: ContactRowShape[] = contactRows
+    .map((r) => ({
+      id: r.id as number,
+      phone: String(r.phone ?? ""),
+      firstName: (r.first_name as string | null) ?? null,
+      lastName: (r.last_name as string | null) ?? null,
+      groupId:
+        r.group_id === null || r.group_id === undefined
+          ? null
+          : (r.group_id as number),
+      createdAt: r.created_at as Date,
+    }))
+    .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+
+  const groupNameById = new Map<number, string>(
+    groups.map((g) => [g.id, g.name]),
+  );
 
   return (
     <div className={cn("mx-auto w-full max-w-4xl px-6 py-10")}>
@@ -186,16 +212,102 @@ export default async function ContactsPage() {
       </section>
 
       {/* ============================================================== */}
-      {/* Contacts section placeholder (filled in by US-008)            */}
+      {/* Contacts section (US-008)                                      */}
       {/* ============================================================== */}
       <section>
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-400">
           Contacts
         </h2>
-        <p className="rounded-lg border border-dashed border-zinc-300 bg-white p-6 text-center text-sm text-zinc-500 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-400">
-          No contacts yet. Contacts will live here once you import or add
-          them (coming in a later story).
-        </p>
+
+        <div
+          className={cn(
+            "mb-4 rounded-lg border border-zinc-200 bg-white p-5",
+            "dark:border-zinc-800 dark:bg-zinc-950",
+          )}
+        >
+          <h3 className="text-sm font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-400">
+            Add a contact
+          </h3>
+          <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-500">
+            Type a phone number; we'll normalize it to E.164 and reject
+            duplicates.
+          </p>
+          <div className="mt-4">
+            <AddContactForm
+              groups={groups.map((g) => ({ id: g.id, name: g.name }))}
+            />
+          </div>
+        </div>
+
+        <div
+          className={cn(
+            "mb-4 rounded-lg border border-zinc-200 bg-white p-5",
+            "dark:border-zinc-800 dark:bg-zinc-950",
+          )}
+        >
+          <h3 className="text-sm font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-400">
+            Bulk import / export
+          </h3>
+          <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-500">
+            Upload a CSV with columns{" "}
+            <span className="font-mono">phone,firstName,lastName,groupId</span>{" "}
+            or download your current contacts.
+          </p>
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <ImportContactsForm />
+            <a
+              href="/api/contacts/export"
+              className={cn(
+                "inline-flex h-9 items-center justify-center rounded-md px-4 text-sm font-medium",
+                "bg-white text-zinc-900 border border-zinc-200 hover:bg-zinc-50",
+                "dark:bg-zinc-900 dark:text-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800",
+              )}
+            >
+              Download CSV
+            </a>
+          </div>
+        </div>
+
+        {contacts.length === 0 ? (
+          <p className="rounded-lg border border-dashed border-zinc-300 bg-white p-6 text-center text-sm text-zinc-500 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-400">
+            No contacts yet. Add one above or upload a CSV to get started.
+          </p>
+        ) : (
+          <div
+            className={cn(
+              "overflow-hidden rounded-lg border border-zinc-200 bg-white",
+              "dark:border-zinc-800 dark:bg-zinc-950",
+            )}
+          >
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Phone</TableHead>
+                  <TableHead>Group</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {contacts.map((c) => (
+                  <ContactRow
+                    key={c.id}
+                    contact={{
+                      id: c.id,
+                      phone: c.phone,
+                      firstName: c.firstName,
+                      lastName: c.lastName,
+                      groupId: c.groupId,
+                    }}
+                    groupName={
+                      c.groupId === null ? null : groupNameById.get(c.groupId) ?? null
+                    }
+                    groups={groups.map((g) => ({ id: g.id, name: g.name }))}
+                  />
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
       </section>
     </div>
   );
