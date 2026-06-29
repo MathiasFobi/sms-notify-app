@@ -257,8 +257,55 @@ export interface TestDb {
     tableName: string,
     where?: Record<string, unknown>,
   ): Promise<TestRow[]>;
+  /**
+   * Delete rows from `tableName` where every key in `where` equals the
+   * stored row's value. Honors the FK `ON DELETE SET NULL` cascade
+   * declared in `SCHEMA_SQL` for the `contacts.group_id → contact_groups.id`
+   * relationship — when a contact group is deleted, every contact that
+   * pointed at it has its `group_id` cleared (set to `null`) in the same
+   * call.
+   *
+   * Returns the number of rows deleted from the target table.
+   *
+   * NOTE: this is the only FK cascade the shim currently implements.
+   * Other cascades declared in the schema (`ON DELETE CASCADE` on
+   * `accounts`, `credit_transactions`, `contacts`, etc. → `users`) are
+   * expected to be enforced by the application layer for now, since
+   * none of the current stories delete users. Add more cascades here
+   * when a story needs them.
+   */
+  delete(
+    tableName: string,
+    where: Record<string, unknown>,
+  ): Promise<number>;
   /** Drop all rows from every table. Useful in `beforeEach`. */
   reset(): void;
+}
+
+/**
+ * Apply the FK cascades declared in `SCHEMA_SQL` to the in-memory shim.
+ * Currently handles:
+ *   - `contacts.group_id` → `contact_groups.id` ON DELETE SET NULL
+ *     (cleared automatically when a contact group is deleted)
+ *
+ * Returns the IDs that were deleted from `tableName`, so the caller can
+ * fold them back into the cascade if needed.
+ */
+function applyFkcascade(
+  db: { tables: Record<string, TestTable> },
+  tableName: string,
+  deletedIds: number[],
+): void {
+  if (tableName === "contact_groups" && deletedIds.length > 0) {
+    // ON DELETE SET NULL on contacts.group_id.
+    for (const id of deletedIds) {
+      for (const contact of db.tables["contacts"]!.rows) {
+        if (contact.group_id === id) {
+          contact.group_id = null;
+        }
+      }
+    }
+  }
 }
 
 /**
@@ -351,6 +398,32 @@ export function createTestDb(): TestDb {
       }
       if (!where) return [...table.rows];
       return table.rows.filter((r) => matchRow(r, where));
+    },
+
+    async delete(
+      tableName: string,
+      where: Record<string, unknown>,
+    ): Promise<number> {
+      const table = tables[tableName];
+      if (!table) {
+        throw new Error(`createTestDb: unknown table "${tableName}"`);
+      }
+      // Snapshot the ids of rows we're about to remove so we can fold
+      // them into the FK cascade for the relationships declared in
+      // `SCHEMA_SQL`. The cascade is application-layer in the shim
+      // because real Postgres is what enforces it in production.
+      const deletedIds: number[] = [];
+      const survivors: TestRow[] = [];
+      for (const row of table.rows) {
+        if (matchRow(row, where)) {
+          if (typeof row.id === "number") deletedIds.push(row.id);
+        } else {
+          survivors.push(row);
+        }
+      }
+      table.rows = survivors;
+      applyFkcascade({ tables }, tableName, deletedIds);
+      return deletedIds.length;
     },
 
     reset(): void {
