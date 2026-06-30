@@ -58,6 +58,16 @@ export interface RequireUserResult {
  * Throws on:
  *   - missing/invalid cookie (or unset test override)
  *   - user id not found in the DB
+ *   - JSON cookie present but malformed
+ *
+ * Resolution order:
+ *   1. Test override (if set via `__setCurrentUserIdForTests`).
+ *   2. `user-id` cookie (positive integer) → look up in the in-memory TestDb.
+ *   3. `__user-cookie` cookie (JSON-encoded user) → use it directly.
+ *      This path exists so signup can work on serverless platforms
+ *      (Vercel, Cloudflare) where the in-memory TestDb is per-request
+ *      and DB rows from a previous request are gone. The cookie carries
+ *      the minimum user shape needed by server actions and pages.
  */
 export async function requireUser(): Promise<RequireUserResult> {
   let userId: number;
@@ -66,6 +76,29 @@ export async function requireUser(): Promise<RequireUserResult> {
     userId = __currentUserIdOverride;
   } else {
     const cookieStore = await cookies();
+
+    // Try the JSON user cookie first (serverless-friendly).
+    const userCookie = cookieStore.get("__user-cookie");
+    if (userCookie) {
+      try {
+        const parsed = JSON.parse(decodeURIComponent(userCookie.value)) as {
+          id?: unknown;
+          row?: Record<string, unknown>;
+        };
+        if (
+          typeof parsed.id === "number" &&
+          Number.isInteger(parsed.id) &&
+          parsed.id > 0 &&
+          parsed.row &&
+          typeof parsed.row === "object"
+        ) {
+          return { id: parsed.id, row: parsed.row };
+        }
+      } catch {
+        throw new Error("Unauthorized: malformed __user-cookie");
+      }
+    }
+
     const c = cookieStore.get("user-id");
     if (!c) {
       throw new Error("Unauthorized: missing user-id cookie");
