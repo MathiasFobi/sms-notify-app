@@ -119,3 +119,5 @@ vitest.setup.ts
 Any platform that runs Next.js and can reach your Postgres (Vercel, Render,
 Fly, Railway). Make sure every env var from `.env.example` is set in the
 deployment environment. The app crashes fast on boot if anything is missing.
+
+<!-- deployment test marker $(date -u +%Y-%m-%dT%H:%M:%SZ) -->
