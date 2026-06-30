@@ -47,6 +47,34 @@ export default function Home() {
           and track bulk SMS — the web-first alternative to spreadsheet
           gateways.
         </p>
+        <div className="mt-8 flex flex-col sm:flex-row items-center gap-3">
+          <a
+            href="/signup"
+            className={cn(
+              "inline-flex items-center justify-center gap-2",
+              "rounded-lg bg-cyan-600 hover:bg-cyan-700",
+              "px-6 py-3 text-sm font-semibold text-white",
+              "transition shadow-sm",
+            )}
+          >
+            Create your account
+          </a>
+          <a
+            href="/signup"
+            className={cn(
+              "inline-flex items-center justify-center gap-2",
+              "rounded-lg border border-zinc-300 dark:border-zinc-700",
+              "bg-white dark:bg-zinc-900 hover:bg-zinc-50 dark:hover:bg-zinc-800",
+              "px-6 py-3 text-sm font-semibold text-zinc-900 dark:text-zinc-50",
+              "transition",
+            )}
+          >
+            Sign in
+          </a>
+        </div>
+        <p className="mt-6 text-xs text-zinc-500 dark:text-zinc-500">
+          Mock-data build — real auth + Stripe + Twilio land in a later story.
+        </p>
       </div>
     </main>
   );
