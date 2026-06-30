@@ -30,7 +30,8 @@ import {
   BulkRecipientSheet,
   type BulkSheetRow,
 } from "@/components/bulk-recipient-sheet";
-import { Upload, TableProperties } from "lucide-react";
+import { Download, Upload, TableProperties } from "lucide-react";
+import { BULK_TEMPLATES, downloadCsv } from "@/lib/csv";
 
 export interface BulkSendSmsFormProps {
   senderIds: Array<{ id: number; value: string; isDefault: boolean }>;
@@ -281,35 +282,46 @@ export function BulkSendSmsForm({
           <label className="text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-400">
             Recipients
           </label>
-          <div className="inline-flex rounded-md border border-zinc-200 dark:border-zinc-700 p-0.5 bg-zinc-50 dark:bg-zinc-900/50">
+          <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => setMode("sheet")}
-              className={cn(
-                "inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded transition",
-                mode === "sheet"
-                  ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-800 dark:text-zinc-50"
-                  : "text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
-              )}
-              data-testid="bulk-mode-sheet"
+              onClick={() => downloadCsv("bulk-template-standard.csv", BULK_TEMPLATES.standard())}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition"
+              data-testid="bulk-template-download"
             >
-              <TableProperties className="h-3.5 w-3.5" />
-              Sheet
+              <Download className="h-3.5 w-3.5" />
+              Standard template
             </button>
-            <button
-              type="button"
-              onClick={() => setMode("upload")}
-              className={cn(
-                "inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded transition",
-                mode === "upload"
-                  ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-800 dark:text-zinc-50"
-                  : "text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
-              )}
-              data-testid="bulk-mode-upload"
-            >
-              <Upload className="h-3.5 w-3.5" />
-              Upload CSV
-            </button>
+            <div className="inline-flex rounded-md border border-zinc-200 dark:border-zinc-700 p-0.5 bg-zinc-50 dark:bg-zinc-900/50">
+              <button
+                type="button"
+                onClick={() => setMode("sheet")}
+                className={cn(
+                  "inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded transition",
+                  mode === "sheet"
+                    ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-800 dark:text-zinc-50"
+                    : "text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
+                )}
+                data-testid="bulk-mode-sheet"
+              >
+                <TableProperties className="h-3.5 w-3.5" />
+                Sheet
+              </button>
+              <button
+                type="button"
+                onClick={() => setMode("upload")}
+                className={cn(
+                  "inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded transition",
+                  mode === "upload"
+                    ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-800 dark:text-zinc-50"
+                    : "text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
+                )}
+                data-testid="bulk-mode-upload"
+              >
+                <Upload className="h-3.5 w-3.5" />
+                Upload CSV
+              </button>
+            </div>
           </div>
         </div>
 

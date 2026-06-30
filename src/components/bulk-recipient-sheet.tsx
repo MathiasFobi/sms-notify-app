@@ -30,12 +30,16 @@ export type BulkSheetRow = {
   id: string; // local-only stable key
   phone: string;
   name?: string;
+  /** Per-recipient custom message (overrides the global default). */
+  message?: string;
 };
 
 export interface BulkRecipientSheetProps {
   value: BulkSheetRow[];
   onChange: (rows: BulkSheetRow[]) => void;
   maxRows?: number;
+  /** When true, render a per-row message column. */
+  showMessageColumn?: boolean;
   className?: string;
 }
 
@@ -63,6 +67,7 @@ export function BulkRecipientSheet({
   value,
   onChange,
   maxRows = DEFAULT_MAX_ROWS,
+  showMessageColumn = false,
   className,
 }: BulkRecipientSheetProps) {
   const [pasteOpen, setPasteOpen] = useState(false);
@@ -166,7 +171,7 @@ export function BulkRecipientSheet({
 
     // Detect tab- vs comma-separated. Both work; first row may be a header.
     const rawLines = pasteText.replace(/\r\n?/g, "\n").split("\n").filter(Boolean);
-    const parsed: { phone: string; name?: string }[] = [];
+    const parsed: { phone: string; name?: string; message?: string }[] = [];
     for (const line of rawLines) {
       const cells = line.includes("\t")
         ? line.split("\t")
@@ -176,7 +181,8 @@ export function BulkRecipientSheet({
       // Skip obvious headers
       if (/^(phone|number|mobile|whatsapp)$/i.test(first)) continue;
       const name = cells[1]?.trim() || undefined;
-      parsed.push({ phone: first, name });
+      const message = cells[2]?.trim() || undefined;
+      parsed.push({ phone: first, name, message });
     }
 
     if (parsed.length === 0) {
@@ -215,6 +221,7 @@ export function BulkRecipientSheet({
           return {
             phone: c[0]?.trim() ?? "",
             name: c[1]?.trim() || undefined,
+            message: c[2]?.trim() || undefined,
           };
         })
         .filter((r) => r.phone && !/^phone$/i.test(r.phone));
@@ -292,16 +299,24 @@ export function BulkRecipientSheet({
         <div className="mb-2 rounded-lg border border-cyan-200 bg-cyan-50 dark:border-cyan-900/50 dark:bg-cyan-950/30 p-3">
           <p className="text-xs text-cyan-800 dark:text-cyan-200 mb-1.5">
             Paste rows from Excel / Google Sheets / CSV. First column is phone,
-            second column (optional) is name. Header row with <code>phone</code>{" "}
+            second column (optional) is name
+            {showMessageColumn ? ", third column (optional) is per-row message" : ""}.
+            Header row with <code>phone</code>{" "}
             is auto-skipped.
           </p>
           <textarea
             value={pasteText}
             onChange={(e) => setPasteText(e.target.value)}
             rows={4}
-            placeholder={`+15551234567	Bob
-+15559876543	Alice
-+15555555555	Charlie`}
+            placeholder={
+              showMessageColumn
+                ? `+15551234567\tBob\tHi Bob, your order is ready
++15559876543\tAlice\tHi Alice, your appointment is at 3pm
++15555555555\tCharlie\tReminder: your prescription is ready`
+                : `+15551234567\tBob
++15559876543\tAlice
++15555555555\tCharlie`
+            }
             className={cn(
               "w-full text-xs font-mono px-2 py-1.5 rounded border",
               "border-cyan-200 dark:border-cyan-900/50",
@@ -352,6 +367,9 @@ export function BulkRecipientSheet({
                 <th className="w-10 px-3 py-2 text-center font-semibold">#</th>
                 <th className="px-3 py-2 text-left font-semibold">Phone</th>
                 <th className="px-3 py-2 text-left font-semibold">Name (optional)</th>
+                {showMessageColumn ? (
+                  <th className="px-3 py-2 text-left font-semibold">Message (per row)</th>
+                ) : null}
                 <th className="w-10 px-2 py-2"></th>
               </tr>
             </thead>
@@ -418,6 +436,24 @@ export function BulkRecipientSheet({
                         data-testid={`bulk-sheet-name-${idx}`}
                       />
                     </td>
+                    {showMessageColumn ? (
+                      <td className="px-1 py-0.5">
+                        <input
+                          type="text"
+                          value={row.message ?? ""}
+                          onChange={(e) =>
+                            updateRow(row.id, { message: e.target.value })
+                          }
+                          placeholder="(use default message)"
+                          className={cn(
+                            "w-full px-2 py-1 rounded text-sm",
+                            "bg-transparent",
+                            "focus:outline-none focus:ring-2 focus:ring-cyan-500/40 focus:bg-white dark:focus:bg-zinc-900"
+                          )}
+                          data-testid={`bulk-sheet-message-${idx}`}
+                        />
+                      </td>
+                    ) : null}
                     <td className="px-1 py-0.5 text-center">
                       <button
                         type="button"

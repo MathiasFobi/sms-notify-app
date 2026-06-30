@@ -10,14 +10,20 @@
  * none`) so that pending state / file inputs / success banners
  * reset when the user switches tabs — switching tabs is implicitly
  * "start a new send".
+ *
+ * Three tabs:
+ *   - Single send: one recipient, one body
+ *   - Bulk send (CSV): N recipients, one body
+ *   - Per-recipient: N recipients, each row can have its own body
  */
 
 import { useState } from "react";
 import { cn } from "@/lib/cn";
 import { SendSmsForm } from "./send-form";
 import { BulkSendSmsForm } from "./bulk-send-form";
+import { PerRecipientSendSmsForm } from "./per-recipient-send-form";
 
-type TabKey = "single" | "bulk";
+type TabKey = "single" | "bulk" | "per-recipient";
 
 export interface SendTabsProps {
   senderIds: Array<{ id: number; value: string; isDefault: boolean }>;
@@ -38,7 +44,7 @@ export function SendTabs({
         role="tablist"
         aria-label="Send mode"
         className={cn(
-          "inline-flex w-fit rounded-md border border-zinc-200 bg-zinc-50 p-1",
+          "inline-flex w-fit flex-wrap rounded-md border border-zinc-200 bg-zinc-50 p-1",
           "dark:border-zinc-800 dark:bg-zinc-900",
         )}
       >
@@ -56,6 +62,13 @@ export function SendTabs({
         >
           Bulk send (CSV)
         </TabButton>
+        <TabButton
+          active={tab === "per-recipient"}
+          onClick={() => setTab("per-recipient")}
+          testId="send-tab-per-recipient"
+        >
+          Per-recipient
+        </TabButton>
       </div>
 
       <div data-testid={`send-panel-${tab}`}>
@@ -64,8 +77,13 @@ export function SendTabs({
             senderIds={senderIds}
             defaultFromNumber={defaultFromNumber}
           />
-        ) : (
+        ) : tab === "bulk" ? (
           <BulkSendSmsForm
+            senderIds={senderIds}
+            defaultFromNumber={defaultFromNumber}
+          />
+        ) : (
+          <PerRecipientSendSmsForm
             senderIds={senderIds}
             defaultFromNumber={defaultFromNumber}
           />
