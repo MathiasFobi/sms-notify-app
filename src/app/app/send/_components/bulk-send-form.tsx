@@ -3,50 +3,45 @@
 /**
  * "Bulk send an SMS" client form (second panel on `/app/send`).
  *
- * Server actions live in `@/lib/actions/bulk-send`; this component is
- * `"use client"` because it owns:
- *   - the active-tab toggle (single vs. bulk)
- *   - the file-input → CSV reader pipeline (no upload server-side —
- *     we read the file in the browser and pass the text straight to
- *     the server action)
- *   - the submit-button pending state
- *   - inline success / error banners
+ * Provides two ways to add recipients:
  *
- * Fields:
- *   - `fromNumber` <select> — populated from the server with the user's
- *     sender IDs. Same source as the single-send form.
- *   - `csv` <input type="file"> — accepts a `.csv` file. The first
- *     column is treated as the phone number; a header row with the
- *     literal `phone` in cell 0 is detected and skipped. Other columns
- *     are ignored.
- *   - `body` <textarea> — the message body (one body per blast).
+ *   1. **In-app spreadsheet** (default tab) — a paste-target table
+ *      (`<BulkRecipientSheet>`). User can paste from Excel/Sheets,
+ *      edit cells, add/remove rows. Best for small/medium lists.
+ *   2. **Upload CSV** (secondary tab) — file input, parsed as CSV.
+ *      Best for >500 rows or repeat uploads.
  *
- * On success: shows a summary banner with `sent`, `failed`, and
- * `skipped` counts, plus a preview of the inserted `messageId`.
+ * Both paths serialize to the same `csv: string` payload the server
+ * action expects.
  *
- * On error: shows the server error message in a red banner; the file
- * selection + body are preserved so the user can correct and retry.
+ * Server actions live in `@/lib/actions/bulk-send`; this component
+ * owns tab state, sheet state, file-read state, and submit pending
+ * state.
  *
- * No new dependency — the tab toggle is just a `useState` boolean
- * (per the US-010 implementation note). We do NOT pull in a tab
- * library.
+ * On success: shows a summary banner with `sent`, `failed`, `skipped`.
+ * On error: shows the server error message in a red banner.
  */
 
 import { useId, useRef, useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/cn";
 import { sendBulkSmsAction, type SendBulkSmsResult } from "@/lib/actions/bulk-send";
+import {
+  BulkRecipientSheet,
+  type BulkSheetRow,
+} from "@/components/bulk-recipient-sheet";
+import { Upload, TableProperties } from "lucide-react";
 
 export interface BulkSendSmsFormProps {
-  /** Approved + pending sender IDs for the current user. */
   senderIds: Array<{ id: number; value: string; isDefault: boolean }>;
-  /** The current `users.twilio_from_number`, if set. */
   defaultFromNumber: string | null;
   className?: string;
 }
 
 const MAX_BODY_CHARS = 1600;
 const MAX_FILE_BYTES = 5 * 1024 * 1024; // 5 MB
+
+type InputMode = "sheet" | "upload";
 
 export function BulkSendSmsForm({
   senderIds,
@@ -58,6 +53,14 @@ export function BulkSendSmsForm({
   const [success, setSuccess] = useState<SendBulkSmsResult | null>(null);
   const [body, setBody] = useState<string>("");
   const [filename, setFilename] = useState<string | null>(null);
+  const [mode, setMode] = useState<InputMode>("sheet");
+  const [rows, setRows] = useState<BulkSheetRow[]>(
+    Array.from({ length: 5 }, () => ({
+      id: Math.random().toString(36).slice(2, 10),
+      phone: "",
+      name: "",
+    }))
+  );
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const bodyId = useId();
@@ -69,6 +72,17 @@ export function BulkSendSmsForm({
   const initialFromValue =
     defaultFromNumber ??
     (senderIds.find((s) => s.isDefault)?.value ?? senderIds[0]?.value ?? "");
+
+  function sheetToCsv(sheetRows: BulkSheetRow[]): string {
+    const valid = sheetRows
+      .filter((r) => r.phone.trim().length > 0)
+      .map((r) => {
+        const phone = r.phone.replace(/"/g, '""');
+        const name = (r.name ?? "").replace(/"/g, '""');
+        return name ? `"${phone}","${name}"` : `"${phone}"`;
+      });
+    return ["phone,name", ...valid].join("\n");
+  }
 
   function handleSubmit(formData: FormData) {
     const messageBody = String(formData.get("body") ?? "");
@@ -85,66 +99,90 @@ export function BulkSendSmsForm({
       return;
     }
 
-    const file = fileInputRef.current?.files?.[0];
-    if (!file) {
-      setError("Please choose a CSV file to upload.");
-      return;
-    }
-    if (file.size > MAX_FILE_BYTES) {
-      setError(
-        `CSV file is too large (${file.size} bytes); maximum is ${MAX_FILE_BYTES} bytes.`,
-      );
+    let csv = "";
+
+    if (mode === "sheet") {
+      const validRows = rows.filter((r) => r.phone.trim().length > 0);
+      if (validRows.length === 0) {
+        setError("Add at least one phone number in the table below.");
+        return;
+      }
+      csv = sheetToCsv(validRows);
+    } else {
+      const file = fileInputRef.current?.files?.[0];
+      if (!file) {
+        setError("Please choose a CSV file to upload.");
+        return;
+      }
+      if (file.size > MAX_FILE_BYTES) {
+        setError(
+          `CSV file is too large (${file.size} bytes); maximum is ${MAX_FILE_BYTES} bytes.`,
+        );
+        return;
+      }
+      // Read file synchronously via FileReader; onload fires async, we
+      // wrap in a Promise and submit.
+      setError(null);
+      setSuccess(null);
+      const reader = new FileReader();
+      reader.onerror = () => setError("Failed to read the CSV file.");
+      reader.onload = () => {
+        const fileText = String(reader.result ?? "");
+        if (fileText.length === 0) {
+          setError("CSV file is empty.");
+          return;
+        }
+        submitBulk(fileText, messageBody, fromNumber);
+      };
+      reader.readAsText(file);
       return;
     }
 
     setError(null);
     setSuccess(null);
+    submitBulk(csv, messageBody, fromNumber);
+  }
 
-    // Read the CSV as text and dispatch the server action.
-    const reader = new FileReader();
-    reader.onerror = () => {
-      setError("Failed to read the CSV file.");
-    };
-    reader.onload = () => {
-      const csv = String(reader.result ?? "");
-      if (csv.length === 0) {
-        setError("CSV file is empty.");
-        return;
-      }
-
-      startTransition(async () => {
-        try {
-          const result = await sendBulkSmsAction({
-            csv,
-            body: messageBody,
-            fromNumber: fromNumber.length > 0 ? fromNumber : undefined,
-          });
-          setSuccess(result);
-          setBody("");
-          // Clear the file input + body via the form reset.
-          const form = document.getElementById("bulk-send-sms-form") as
-            | HTMLFormElement
-            | null;
-          form?.reset();
-          setFilename(null);
-          if (fileInputRef.current) {
-            fileInputRef.current.value = "";
-          }
-        } catch (err) {
-          setError(
-            err instanceof Error ? err.message : "Failed to send bulk SMS",
+  function submitBulk(csv: string, messageBody: string, fromNumber: string) {
+    startTransition(async () => {
+      try {
+        const result = await sendBulkSmsAction({
+          csv,
+          body: messageBody,
+          fromNumber: fromNumber.length > 0 ? fromNumber : undefined,
+        });
+        setSuccess(result);
+        setBody("");
+        const form = document.getElementById("bulk-send-sms-form") as
+          | HTMLFormElement
+          | null;
+        form?.reset();
+        setFilename(null);
+        if (fileInputRef.current) {
+          fileInputRef.current.value = "";
+        }
+        if (mode === "sheet") {
+          setRows(
+            Array.from({ length: 5 }, () => ({
+              id: Math.random().toString(36).slice(2, 10),
+              phone: "",
+              name: "",
+            })),
           );
         }
-      });
-    };
-    reader.readAsText(file);
+      } catch (err) {
+        setError(
+          err instanceof Error ? err.message : "Failed to send bulk SMS",
+        );
+      }
+    });
   }
 
   return (
     <form
       id="bulk-send-sms-form"
       action={handleSubmit}
-      className={cn("flex w-full max-w-xl flex-col gap-4", className)}
+      className={cn("flex w-full max-w-3xl flex-col gap-4", className)}
     >
       {error ? (
         <div
@@ -175,7 +213,6 @@ export function BulkSendSmsForm({
           <ul className="mt-1 list-disc pl-5 text-xs">
             <li>
               <span data-testid="bulk-send-sent">{success.sent}</span> sent
-              (provider succeeded)
             </li>
             {success.failed > 0 ? (
               <li>
@@ -238,45 +275,84 @@ export function BulkSendSmsForm({
         )}
       </div>
 
-      <div className="flex flex-col gap-1">
-        <label
-          htmlFor={fileId}
-          className="text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-400"
-        >
-          CSV file (one column: phone)
-        </label>
-        <input
-          ref={fileInputRef}
-          id={fileId}
-          name="csv"
-          type="file"
-          accept=".csv,text/csv"
-          disabled={isPending}
-          required
-          data-testid="bulk-csv-input"
-          onChange={(e) => {
-            const f = e.target.files?.[0];
-            setFilename(f ? f.name : null);
-          }}
-          className={cn(
-            "block w-full text-sm text-zinc-700",
-            "file:mr-3 file:rounded-md file:border file:border-zinc-200",
-            "file:bg-white file:px-3 file:py-1 file:text-sm file:text-zinc-900",
-            "hover:file:bg-zinc-50",
-            "dark:text-zinc-200 dark:file:border-zinc-700 dark:file:bg-zinc-900",
-            "dark:file:text-zinc-100 dark:hover:file:bg-zinc-800",
-          )}
-        />
-        {filename ? (
-          <p className="text-xs text-zinc-500 dark:text-zinc-400">
-            Selected: <span className="font-mono">{filename}</span>
-          </p>
+      {/* Recipients: tabbed sheet vs upload */}
+      <div className="flex flex-col gap-2">
+        <div className="flex items-center justify-between">
+          <label className="text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-400">
+            Recipients
+          </label>
+          <div className="inline-flex rounded-md border border-zinc-200 dark:border-zinc-700 p-0.5 bg-zinc-50 dark:bg-zinc-900/50">
+            <button
+              type="button"
+              onClick={() => setMode("sheet")}
+              className={cn(
+                "inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded transition",
+                mode === "sheet"
+                  ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-800 dark:text-zinc-50"
+                  : "text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
+              )}
+              data-testid="bulk-mode-sheet"
+            >
+              <TableProperties className="h-3.5 w-3.5" />
+              Sheet
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode("upload")}
+              className={cn(
+                "inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded transition",
+                mode === "upload"
+                  ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-800 dark:text-zinc-50"
+                  : "text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
+              )}
+              data-testid="bulk-mode-upload"
+            >
+              <Upload className="h-3.5 w-3.5" />
+              Upload CSV
+            </button>
+          </div>
+        </div>
+
+        {mode === "sheet" ? (
+          <BulkRecipientSheet
+            value={rows}
+            onChange={setRows}
+            data-testid="bulk-sheet"
+          />
         ) : (
-          <p className="text-xs text-zinc-500 dark:text-zinc-400">
-            First column must be the phone number. A header row with the
-            literal <span className="font-mono">phone</span> in cell 0 is
-            auto-detected and skipped.
-          </p>
+          <div className="flex flex-col gap-1">
+            <label
+              htmlFor={fileId}
+              className="text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-400"
+            >
+              CSV file (one column: phone, optional: name)
+            </label>
+            <input
+              ref={fileInputRef}
+              id={fileId}
+              name="csv"
+              type="file"
+              accept=".csv,text/csv"
+              disabled={isPending}
+              data-testid="bulk-csv-input"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                setFilename(f ? f.name : null);
+              }}
+              className={cn(
+                "block w-full text-sm text-zinc-900 dark:text-zinc-50",
+                "file:mr-3 file:px-3 file:py-1.5 file:rounded-md file:border-0",
+                "file:bg-zinc-100 file:text-zinc-700 file:font-medium",
+                "hover:file:bg-zinc-200 dark:file:bg-zinc-800 dark:file:text-zinc-200",
+                "disabled:opacity-50"
+              )}
+            />
+            {filename ? (
+              <p className="text-xs text-zinc-500 mt-1">
+                Selected: <span className="font-mono">{filename}</span>
+              </p>
+            ) : null}
+          </div>
         )}
       </div>
 
@@ -290,45 +366,42 @@ export function BulkSendSmsForm({
         <textarea
           id={bodyId}
           name="body"
-          rows={5}
-          required
-          maxLength={5000}
-          disabled={isPending}
+          rows={4}
           value={body}
           onChange={(e) => setBody(e.target.value)}
-          placeholder="Type your message…"
+          disabled={isPending}
+          placeholder="Type your SMS message…"
+          data-testid="bulk-body"
           className={cn(
-            "flex w-full rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm shadow-sm",
-            "placeholder:text-zinc-400 resize-y",
+            "w-full rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm shadow-sm",
             "focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:ring-offset-2",
             "disabled:cursor-not-allowed disabled:opacity-50",
-            "dark:border-zinc-700 dark:bg-zinc-900 dark:placeholder:text-zinc-500",
-            "dark:focus:ring-zinc-300",
-            overLimit && "border-rose-400 focus:ring-rose-500",
+            "dark:border-zinc-700 dark:bg-zinc-900 dark:focus:ring-zinc-300",
+            overLimit && "border-rose-400 focus:ring-rose-400"
           )}
         />
-        <div
+        <p
           className={cn(
-            "flex justify-end text-xs",
-            overLimit
-              ? "text-rose-600 dark:text-rose-400"
-              : "text-zinc-500 dark:text-zinc-400",
+            "text-[11px] text-right",
+            overLimit ? "text-rose-600" : "text-zinc-500"
           )}
         >
-          <span data-testid="bulk-char-counter">
-            {body.length} / {MAX_BODY_CHARS}
-          </span>
-        </div>
+          {body.length} / {MAX_BODY_CHARS}
+        </p>
       </div>
 
-      <div className="flex items-center justify-end gap-2">
-        <Button
-          type="submit"
-          disabled={isPending || overLimit || senderIds.length === 0}
-        >
-          {isPending ? "Sending…" : "Send bulk SMS"}
-        </Button>
-      </div>
+      <Button
+        type="submit"
+        disabled={isPending}
+        data-testid="bulk-send-submit"
+        className="self-start"
+      >
+        {isPending
+          ? "Sending…"
+          : mode === "sheet"
+            ? `Send to ${rows.filter((r) => r.phone.trim().length > 0).length || 0} number${rows.filter((r) => r.phone.trim().length > 0).length === 1 ? "" : "s"}`
+            : "Send bulk SMS"}
+      </Button>
     </form>
   );
 }
