@@ -278,51 +278,53 @@ export function BulkSendSmsForm({
 
       {/* Recipients: tabbed sheet vs upload */}
       <div className="flex flex-col gap-2">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-2">
           <label className="text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-400">
             Recipients
           </label>
-          <div className="flex items-center gap-2">
+          <div className="inline-flex rounded-md border border-zinc-200 dark:border-zinc-700 p-0.5 bg-zinc-50 dark:bg-zinc-900/50">
             <button
               type="button"
-              onClick={() => downloadCsv("bulk-template-standard.csv", BULK_TEMPLATES.standard())}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition"
-              data-testid="bulk-template-download"
+              onClick={() => setMode("sheet")}
+              className={cn(
+                "inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded transition",
+                mode === "sheet"
+                  ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-800 dark:text-zinc-50"
+                  : "text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
+              )}
+              data-testid="bulk-mode-sheet"
             >
-              <Download className="h-3.5 w-3.5" />
-              Standard template
+              <TableProperties className="h-3.5 w-3.5" />
+              Sheet
             </button>
-            <div className="inline-flex rounded-md border border-zinc-200 dark:border-zinc-700 p-0.5 bg-zinc-50 dark:bg-zinc-900/50">
-              <button
-                type="button"
-                onClick={() => setMode("sheet")}
-                className={cn(
-                  "inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded transition",
-                  mode === "sheet"
-                    ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-800 dark:text-zinc-50"
-                    : "text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
-                )}
-                data-testid="bulk-mode-sheet"
-              >
-                <TableProperties className="h-3.5 w-3.5" />
-                Sheet
-              </button>
-              <button
-                type="button"
-                onClick={() => setMode("upload")}
-                className={cn(
-                  "inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded transition",
-                  mode === "upload"
-                    ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-800 dark:text-zinc-50"
-                    : "text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
-                )}
-                data-testid="bulk-mode-upload"
-              >
-                <Upload className="h-3.5 w-3.5" />
-                Upload CSV
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={() => setMode("upload")}
+              className={cn(
+                "inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded transition",
+                mode === "upload"
+                  ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-800 dark:text-zinc-50"
+                  : "text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
+              )}
+              data-testid="bulk-mode-upload"
+            >
+              <Upload className="h-3.5 w-3.5" />
+              Upload
+            </button>
           </div>
+        </div>
+
+        {/* Templates row — separate so the header doesn't crowd */}
+        <div>
+          <button
+            type="button"
+            onClick={() => downloadCsv("bulk-template-standard.csv", BULK_TEMPLATES.standard())}
+            className="inline-flex items-center gap-1.5 px-2 py-1 text-[11px] font-medium rounded border border-dashed border-zinc-300 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-900/30 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition"
+            data-testid="bulk-template-download"
+          >
+            <Download className="h-3 w-3" />
+            Standard template
+          </button>
         </div>
 
         {mode === "sheet" ? (

@@ -247,14 +247,14 @@ export function BulkRecipientSheet({
 
   return (
     <div className={cn("w-full", className)}>
-      <div className="flex items-center justify-between gap-3 mb-2">
+      <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
         <div className="flex items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400">
           <span>
             <span className="font-semibold text-emerald-600 dark:text-emerald-400">
               {validCount}
             </span>
             <span> valid</span>
-            <span className="text-zinc-300 dark:text-zinc-600 mx-1.5">/</span>
+            <span className="text-zinc-300 dark:text-zinc-600 mx-1">/</span>
             <span>{value.length} total</span>
           </span>
           {value.length >= maxRows ? (
@@ -263,34 +263,37 @@ export function BulkRecipientSheet({
             </span>
           ) : null}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
           <button
             type="button"
             onClick={() => setPasteOpen((s) => !s)}
             data-testid="bulk-sheet-paste-toggle"
-            className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition"
+            title="Paste from spreadsheet (Cmd-V)"
+            className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition"
           >
-            <ClipboardPaste className="h-3.5 w-3.5 mr-1.5" />
-            Paste
+            <ClipboardPaste className="h-3.5 w-3.5 sm:mr-1" />
+            <span className="hidden sm:inline">Paste</span>
           </button>
           <button
             type="button"
             onClick={addRow}
             data-testid="bulk-sheet-add-row"
-            className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition"
+            title="Add row"
+            className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition"
           >
-            <Plus className="h-3.5 w-3.5 mr-1.5" />
-            Row
+            <Plus className="h-3.5 w-3.5 sm:mr-1" />
+            <span className="hidden sm:inline">Row</span>
           </button>
           <button
             type="button"
             onClick={clearAll}
             disabled={value.every((r) => !r.phone)}
             data-testid="bulk-sheet-clear"
-            className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition disabled:opacity-50"
+            title="Clear all"
+            className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition disabled:opacity-50"
           >
-            <X className="h-3.5 w-3.5 mr-1.5" />
-            Clear
+            <X className="h-3.5 w-3.5 sm:mr-1" />
+            <span className="hidden sm:inline">Clear</span>
           </button>
         </div>
       </div>

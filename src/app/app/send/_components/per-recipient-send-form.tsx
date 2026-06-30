@@ -375,60 +375,62 @@ export function PerRecipientSendSmsForm({
 
       {/* Recipients: tabbed sheet vs upload */}
       <div className="flex flex-col gap-2">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-2">
           <label className="text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-400">
             Recipients
           </label>
-          <div className="flex items-center gap-2">
+          <div className="inline-flex rounded-md border border-zinc-200 dark:border-zinc-700 p-0.5 bg-zinc-50 dark:bg-zinc-900/50">
             <button
               type="button"
-              onClick={() => downloadCsv("bulk-template-standard.csv", BULK_TEMPLATES.standard())}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition"
-              data-testid="per-recipient-template-standard"
+              onClick={() => setMode("sheet")}
+              className={cn(
+                "inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded transition",
+                mode === "sheet"
+                  ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-800 dark:text-zinc-50"
+                  : "text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
+              )}
+              data-testid="per-recipient-mode-sheet"
             >
-              <Download className="h-3.5 w-3.5" />
-              Standard template
+              <TableProperties className="h-3.5 w-3.5" />
+              Sheet
             </button>
             <button
               type="button"
-              onClick={() => downloadCsv("bulk-template-per-recipient.csv", BULK_TEMPLATES.perRecipient())}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition"
-              data-testid="per-recipient-template-per-recipient"
+              onClick={() => setMode("upload")}
+              className={cn(
+                "inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded transition",
+                mode === "upload"
+                  ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-800 dark:text-zinc-50"
+                  : "text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
+              )}
+              data-testid="per-recipient-mode-upload"
             >
-              <Download className="h-3.5 w-3.5" />
-              Per-recipient template
+              <Upload className="h-3.5 w-3.5" />
+              Upload
             </button>
-            <div className="inline-flex rounded-md border border-zinc-200 dark:border-zinc-700 p-0.5 bg-zinc-50 dark:bg-zinc-900/50">
-              <button
-                type="button"
-                onClick={() => setMode("sheet")}
-                className={cn(
-                  "inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded transition",
-                  mode === "sheet"
-                    ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-800 dark:text-zinc-50"
-                    : "text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
-                )}
-                data-testid="per-recipient-mode-sheet"
-              >
-                <TableProperties className="h-3.5 w-3.5" />
-                Sheet
-              </button>
-              <button
-                type="button"
-                onClick={() => setMode("upload")}
-                className={cn(
-                  "inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded transition",
-                  mode === "upload"
-                    ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-800 dark:text-zinc-50"
-                    : "text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
-                )}
-                data-testid="per-recipient-mode-upload"
-              >
-                <Upload className="h-3.5 w-3.5" />
-                Upload CSV
-              </button>
-            </div>
           </div>
+        </div>
+
+        {/* Templates row — separate so the header doesn't crowd */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            type="button"
+            onClick={() => downloadCsv("bulk-template-standard.csv", BULK_TEMPLATES.standard())}
+            className="inline-flex items-center gap-1.5 px-2 py-1 text-[11px] font-medium rounded border border-dashed border-zinc-300 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-900/30 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition"
+            data-testid="per-recipient-template-standard"
+          >
+            <Download className="h-3 w-3" />
+            Standard template
+          </button>
+          <button
+            type="button"
+            onClick={() => downloadCsv("bulk-template-per-recipient.csv", BULK_TEMPLATES.perRecipient())}
+            className="inline-flex items-center gap-1.5 px-2 py-1 text-[11px] font-medium rounded border border-dashed border-cyan-300 dark:border-cyan-800 bg-cyan-50/50 dark:bg-cyan-950/30 text-cyan-700 dark:text-cyan-300 hover:bg-cyan-100 dark:hover:bg-cyan-900/40 transition"
+            data-testid="per-recipient-template-per-recipient"
+          >
+            <Download className="h-3 w-3" />
+            Per-recipient template
+          </button>
         </div>
 
         {mode === "sheet" ? (
