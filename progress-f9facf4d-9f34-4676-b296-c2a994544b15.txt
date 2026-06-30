@@ -1,0 +1,183 @@
+# Progress Log
+Run: f9facf4d-9f34-4676-b296-c2a994544b15
+Task: Antfarm feature-dev workflow — implement user stories against the sms-notify-app repo on branch `feature/mock-providers-buildout`.
+Started: 2026-06-29
+
+## Codebase Patterns
+
+The patterns below apply to every story. New developers — read this first.
+
+### Project layout
+
+- **Next.js 16** (Turbopack). `AGENTS.md` warns the version has breaking changes; check `node_modules/next/dist/docs/01-app/03-api-reference/...` before writing any Next-specific code (route handlers, `cookies`, `notFound`, etc.).
+- **pnpm** is the package manager (see `pnpm-workspace.yaml`). Use `pnpm run build`, `pnpm run typecheck`, `pnpm test --run`.
+- **React 19** + server components by default; client islands must `"use client"`.
+- **Tailwind v4** via `@tailwindcss/postcss`. No Tailwind component library — primitives live in `src/components/ui/`.
+
+### Auth seam
+
+- `src/lib/auth/require-user.ts` reads a `user-id` cookie via `next/headers`.
+- For tests, `__setCurrentUserIdForTests(id)` overrides the cookie read; `__resetCurrentUserForTests()` clears it. Always pair with `__resetTestDbForTests()` in `beforeEach` / `afterEach`.
+
+### Test DB seam
+
+- `src/test/db.ts` exposes `createTestDb()` (fresh in-memory shim, hermetic per-test) and `getTestDb()` (process singleton).
+- Production code goes through `getTestDb()`; unit tests use `createTestDb()` and pass the result into `__<name>Internal` helpers.
+- The shim supports `insert` / `update(where = )` / `select(where = )` / `delete`. No `IN` / `JOIN` support — filter and stitch in JS.
+- Schema is **duplicated** as raw DDL in `SCHEMA_SQL`. Keep it in sync with `src/db/schema.ts`.
+
+### Action pattern (`__<name>Internal` split)
+
+Every server action file follows the same shape (see `src/lib/actions/inbox.ts`, `src/lib/actions/send.ts`, `src/lib/actions/contacts.ts`):
+
+```ts
+"use server";
+// Public wrapper — calls requireUser + the internal with getTestDb() + getXxxProvider().
+export async function doSomethingAction(args) { ... }
+// Test-only internal — accepts a `db: TestDb` and a `provider: XxxProvider`.
+export async function __doSomethingInternal(input: { ...; db: TestDb; provider: XxxProvider }) { ... }
+```
+
+This lets unit tests drive the internal with a fresh `createTestDb()` and a manually-constructed provider — no singleton coupling, no `next/headers` plumbing.
+
+### Lib-helper pattern (`__<name>Internal` split, no `"use server"`)
+
+Pure read-only helpers that are NOT server actions (e.g. `getDashboardStats`, `getMessageVolume30d`, `getRecentActivity`, `getDeliveryReport`, `getCostSummary` in `src/lib/dashboard.ts` / `src/lib/reports.ts`) follow the same `__<name>Internal` split but live in a regular (non-`"use server"`) module:
+
+```ts
+// Public wrapper — no DB arg. Resolves the singleton.
+export async function getMessageVolume30d(userId: number): Promise<…> {
+  return __getMessageVolume30dInternal({ userId, db: getTestDb(), now: new Date() });
+}
+// Test-only internal — explicit `db` + `now` (so day-boundary tests
+// don't depend on the wall-clock).
+export async function __getMessageVolume30dInternal(args: {
+  userId: number; db: TestDb; now: Date;
+}): Promise<…> { ... }
+```
+
+This is the same shape as the action pattern minus `requireUser` / `getXxxProvider()`. Page modules call the public wrapper; unit tests call the `__internal` with `createTestDb()` and a fixed `now` anchor.
+
+### Mock provider convention
+
+- Mock providers (`MockStripeProvider`, `MockSmsProvider`) resolve their backing DB via `getTestDb()` (not via `db/index.ts`). Production code reads `db` from `db/index.ts`; mock-only paths read from `@/test/db`.
+- The billing module reads `process.env.BILLING_PROVIDER` **directly** (NOT through `src/lib/env.ts`) so the Stripe secret keys that `env.ts` requires at boot don't gate the mock-only path.
+- A `__reset<Provider>ForTests()` helper drops the singleton so the next `getXxxProvider()` constructs a fresh provider.
+
+### Route handler convention
+
+- Handlers live in `src/app/api/<path>/route.ts`. `export const dynamic = "force-dynamic"`.
+- Form-urlencoded bodies via `await request.formData()`. JSON responses via `new Response(JSON.stringify(...), { headers: { "Content-Type": "application/json" } })`.
+- Dev-only endpoints (e.g. `/dev/webhooks`) gate on `process.env.NODE_ENV === "production"` and short-circuit with `notFound()` from `next/navigation`. Tests flip the gate via a `__set<Name>ProductionOverride(boolean | null)` export.
+- Idempotency / replay: every webhook handler is idempotent on its vendor event id (or our synthesized `<sid>:<status>` key for Twilio). Duplicates return `200 OK` with `result: "duplicate"`.
+
+### Page test convention
+
+- Render via `renderToStaticMarkup(await Page())`. The page module is imported dynamically so `next/headers`/`requireUser` deps don't leak into module load.
+- Auth override + singleton DB reset are always paired in `beforeEach` / `afterEach`.
+- `data-testid`s on every interactive element + on data rows (e.g. `inbox-row-${id}`). Tests assert on those `data-testid`s rather than text content.
+- For charts (e.g. SVG bar charts), `data-date` + `data-count` attributes on each shape let tests assert on the rendered series without parsing SVG attributes by position.
+
+### Server-action file: re-export limits
+
+- `"use server"` files in Next.js 16 only allow async functions and type-only exports. Re-exporting schema objects or module-level constants (like `PACKAGES`) breaks the build — `next build` errors out. Import those symbols from their canonical module (`@/db/schema`, `@/lib/billing/packages`) at the call site instead.
+- Type-only re-exports (`export type { ... }`) are fine.
+
+### UI primitives
+
+- `Button` (`primary` | `secondary`), `Input`, `Table`, `EmptyState`, `Dialog`, `DialogActions`. All forward refs.
+- Server-action forms pair `useTransition` with a hidden action prop. Buttons show "Doing…" while pending. Errors surface in inline `role="alert"` banners.
+- There is NO `Card` component — pages render card-shaped `<article>` (or `<section>`) divs directly with `"rounded-lg border border-zinc-200 bg-white p-5"` styling. US-020's dashboard uses this same visual primitive (see `src/app/app/dashboard/page.tsx` → `<article data-testid="dashboard-stat-unread" …>` and `<section data-testid="dashboard-chart-section" …>`).
+
+### Hand-rolled SVG charts
+
+- For small, decorative visualizations (e.g. 30-bar daily volume) the team prefers no chart library. Use a viewBox-based `<svg>` with one `<rect>` per data point + `<text>` ticks. See `src/app/app/dashboard/page.tsx` → `VolumeChart` for the canonical example.
+- The page module owns the SVG — no `"use client"`. Server-rendered SVG is fine for static charts and ships zero JS.
+- Always include a `<title>` child on each `<rect>` so the bar surfaces a native tooltip on hover.
+
+### Date / time handling
+
+- The test DB's `insert` default for `created_at` and `received_at` is `new Date()` (a `Date` object). Production (Postgres `timestamptz`) round-trips as either string or `Date`. Helpers that read these columns should coerce via `value instanceof Date ? … : Date.parse(value)` rather than relying on a single type.
+- For day-bucketed aggregations (e.g. volume series), use UTC `YYYY-MM-DD` keys — locale-free, sortable as strings, stable across timezones. The dashboard helper exposes `formatUtcDay(Date)` and `startOfUtcDay(Date)` for this purpose.
+
+---
+
+## 2026-06-29 09:35 — US-015: Inbox page
+
+Done by a prior session. Patterns above are informed by that work. The Inbox page lives at `src/app/app/inbox/page.tsx` and is the closest prior analog to US-016's billing page.
+
+## 2026-06-29 09:35 — US-016: Billing page — credit packages, checkout, history
+
+- Added `src/lib/billing/packages.ts` — typed `PACKAGES` array (Starter 100/$5, Growth 500/$20, Scale 2000/$60), `getPackageById()`, `formatPriceUsd()`.
+- Added `src/lib/actions/billing.ts` — `startCheckoutAction({ packageCredits })` resolves the catalog entry by `credits`, calls `getBillingProvider().createCheckoutSession`, returns `{ url, sessionId }`. Internal `__startCheckoutInternal` exposes a `db` + `provider` seam for hermetic tests.
+- Added `src/app/api/dev/stripe/confirm/route.ts` — GET handler with production guard (`__setConfirmProductionOverride` for tests). Looks up the session by id, idempotently flips it to `completed`, increments `accounts.credits` by `package_credits`, writes a `credit_transactions` row with `reason='purchase'`. Redirects 303 to `/app/billing` (or `?redirect=`).
+- Added `src/app/app/billing/page.tsx` — server component rendering balance card, three `PackageCard`s, and a history Table of `credit_transactions` rows where `reason IN ('purchase','refund','admin_adjust')`. Empty-state copy when no qualifying rows.
+- Added `src/app/app/billing/_components/purchase-button.tsx` — `"use client"` island; calls `startCheckoutAction` then `window.location.assign(url)`.
+- **Tests added:**
+  - `src/lib/billing/packages.test.ts` — 14 tests: catalog shape, canonical prices (100/$5, 500/$20, 2000/$60), lookup helpers, formatter.
+  - `src/lib/actions/billing.test.ts` — 12 tests: internal helper (inserts pending row, returns URL containing `/api/dev/stripe/confirm?session=`, throws on unknown credits / non-positive inputs); public wrapper (uses `requireUser`, propagates unknown-package error).
+  - `src/app/api/dev/stripe/confirm/route.test.ts` — 14 tests: `__confirmCheckoutInternal` (confirmed path, idempotency, cancelled/unknown errors); route handler (404 in prod, 303 redirect, 400 missing-param, 404 unknown/cancelled).
+  - `src/app/app/billing/page.test.tsx` — 11 tests: header, balance (incl. 0 fallback), all three packages + buttons, empty-state, history filtering (`send`/`bonus` excluded), sort order, cross-user leakage.
+
+- **Learnings:**
+  - `next/headers` `cookies()` throws its own error ("`cookies` was called outside a request scope") when invoked without a request context. Tests that exercise the unauthenticated-code-path of a server action should assert `.rejects.toThrow()` rather than matching on a specific message.
+  - For "no matching entry" validation in the action layer, a catalog lookup keyed by `credits` (vs `id`) is the right seam: the public action only ever knows the user's chosen size, not the catalog `id`. The page's `<PurchaseButton>` sends `packageCredits` for that reason.
+  - The `"use server"` re-export rule bites the catalog too — keep `PACKAGES` in its own module so the action file imports it (doesn't re-export the value) but the page can also import it directly. This keeps the boundary clean and avoids the next-build error.
+  - `bun test --run` (well, `pnpm test --run`) finishes ~13s. Build is ~12s.
+
+---
+
+## 2026-06-29 10:55 PDT — US-019: Admin user management — list, search, credit adjust
+
+- Added `src/lib/auth.ts` (flat module per the story spec) — re-exports `requireUser` + the new `requireAdmin`. Coexists with the `src/lib/auth/` folder; `src/lib/auth/index.ts` was also updated to re-export `requireAdmin` so both paths work.
+- Added `src/lib/auth/require-admin.ts` — `requireAdmin()` calls `requireUser()` then verifies `users.role === 'admin'`. Throws `notFound()` (Next.js sentinel → 404) when the role is anything else, including the unauthenticated branch bubbling from `requireUser()`. Uses the same `__setCurrentUserIdForTests` override seam as `requireUser`.
+- Added `src/lib/admin/reasons.ts` — the `ADMIN_ADJUST_REASONS` tuple (`support`, `refund`, `goodwill`, `correction`, `chargeback`) + `isAdminAdjustReason()` type-guard. Lives outside the `"use server"` file because Next.js 16 only allows async function exports from such files; non-function values break the build.
+- Added `src/lib/actions/admin.ts` — two public actions + two `__<name>Internal` helpers, same split as every other action file. `adminListUsersAction({ query?, limit })` lists users with `accounts.credits` joined in JS, sorted by `created_at` desc, capped at `limit` (default 100, clamped to >=1), and a case-insensitive substring match on `email` OR `name`. `adminAdjustCreditsAction({ userId, delta, reason })` adds `delta` to `accounts.credits` and writes a `credit_transactions` row with `reason='admin_adjust'` + a synthetic `stripe_payment_intent_id` of `"admin_adjust:<label>"` so the audit trail preserves the operator's chosen reason without a schema change.
+- Added `src/app/admin/users/page.tsx` — server component gated on `requireAdmin()` (404s for non-admin). Header + search form (GET → re-renders with `?query=`) + Table with email/name/credits/joined date + per-row adjust form (delta number + reason `<select>`). The adjust form posts to an inline `adjustCreditsFormAction(userId, formData)` declared in the page file with `"use server"`; that delegates to `adminAdjustCreditsAction`. Uses the same inline-server-action-per-row pattern as US-011 (`/app/scheduled`) and US-015 (`/app/inbox`).
+
+- **Tests added (45 new):**
+  - `src/lib/auth/require-admin.test.ts` (6): admin → returns `{ id, row }`; non-admin → notFound(); unknown role string → notFound(); missing role → notFound(); non-existent user → throws (via requireUser); no override → throws (via requireUser).
+  - `src/lib/actions/admin.test.ts` (28): `__adminListUsersInternal` (empty list, defaults to 0 credits when no account, joins `accounts.credits`, case-insensitive substring match on email OR name, sort by `created_at` desc, `limit` cap + non-positive fallback, row shape); `__adminAdjustCreditsInternal` (positive + negative deltas, `delta=0` no-op still writes an audit row, `reason='admin_adjust'` audit row, `stripe_payment_intent_id` marker, returns `txnId`, throws on non-positive userId / non-integer delta / unknown reason / missing user / missing account, accumulates across multiple adjustments, `ADMIN_ADJUST_REASONS` catalog exposed); public wrappers (admin → returns list + adjusts credits; non-admin → notFound() + no audit row written; throws on unknown target user / unknown reason).
+  - `src/app/admin/users/page.test.tsx` (11): admin renders page header; per-row email/name/credits/joined (incl. `data-value` for credits), admin role badge on admin rows, search input + submit button, search input pre-population when `?query=` is set, empty state when no users match the query, per-row adjust form with `<select>` exposing every allowed reason, non-admin → notFound(), no override → throws, no-existent user → notFound(), admin sees every seeded user regardless of role.
+
+- **Verification:**
+  - `pnpm test --run` → 36 files / 562 tests (was 33 / 517). +45 net new (6 require-admin + 28 actions + 11 page).
+  - `pnpm run build` → 17 routes (was 16). New: `/admin/users` (dynamic). Build clean.
+  - `pnpm exec tsc --noEmit` → zero errors.
+
+- **Learnings / new patterns:**
+  - **`requireAdmin()` belongs at `src/lib/auth.ts` (not under `src/lib/auth/`) per the user-story spec.** Even though `src/lib/auth/` is a folder with an `index.ts` barrel, the spec calls for the flat path. Both files exist; the folder index re-exports from the flat file so `import from "@/lib/auth"` works either way. Future specs that pin auth helpers to a specific path should follow the same flat-and-folder co-existence pattern (flat = spec'd public path; folder = actual implementation; index.ts barrel wires them).
+  - **Encode audit metadata into `stripe_payment_intent_id` rather than adding a column.** `credit_transactions` has no `note` / `admin_reason` column, so the operator's chosen reason (`support`, `refund`, etc.) is preserved as a `"admin_adjust:<label>"` marker on `stripe_payment_intent_id`. The canonical `reason` column stays `'admin_adjust'` so reports filtering by reason still works. If a future story adds a real `note` column, the marker should move there and the stripe_payment_intent_id prefix should be dropped. Same idea applies to any other operator-action audit trail where you want rich metadata but the schema doesn't yet have the column for it.
+  - **`requireAdmin()` is a `notFound()` gate, not a `throw new Error("Forbidden")` gate.** Collapsing "you don't have access" with "this section doesn't exist" prevents non-admin users from probing the admin surface for existence. The page reads the same throw as a 404 response. Tests assert on `.rejects.toThrow()` rather than matching a specific message.
+  - **`bind(null, userId)` for inline server-action forms with per-row context.** The `<form action={adjustCreditsFormAction.bind(null, u.id)}>` pattern lets one server action declared in the page file serve every per-row form with the row's user id baked in. The FormData body only carries `delta` + `reason`. Mirrors the per-row Cancel button on `/app/scheduled` and the Mark-read button on `/app/inbox` — same shape, different row context.
+  - **Non-function value exports from `"use server"` files break the build, even when type-only exports are allowed.** I tried re-exporting `ADMIN_ADJUST_REASONS` from `src/lib/actions/admin.ts` and the build failed with "A `use server` file can only export async functions, found object." The fix was to move the constant + type-guard to its own module (`src/lib/admin/reasons.ts`) and have the action file import it (rather than re-export). This is the same constraint that bit `PACKAGES` in US-016 — the pattern is consistent: shared catalog-like constants must live in their own non-`use server` module.
+
+---
+
+## 2026-06-29 11:08 PDT — US-020: Dashboard analytics — 30d chart + recent activity
+
+- Extended `src/lib/dashboard.ts` with two new read-only helpers, plus refactored `getDashboardStats` to the same public/inner split as the new helpers. **`getDashboardStats(userId)`** now takes only `userId` (resolves `getTestDb()`); the previous `(userId, db)` signature was moved to `__getDashboardStatsInternal({ userId, db })`. The page calls `(user.id)`; the unit tests and `inbox.test.ts` were updated to call `__getDashboardStatsInternal({ userId, db })`.
+- **`getMessageVolume30d(userId)`** returns exactly 30 entries `{ date: 'YYYY-MM-DD', count: number }` for the trailing 30 UTC days (inclusive of today), gap-filled with `0`. Sorts oldest → newest (today is LAST so chart x-axis reads left-to-right). Underlying `__getMessageVolume30dInternal` takes a fixed `now: Date` so day-boundary tests don't depend on the wall-clock. Counts every `messages` row regardless of `status` (scheduled/queued/failed/cancelled all count — the dashboard surfaces activity, not delivery).
+- **`getRecentActivity(userId, limit=10)`** fetches the latest `limit` outbound (`messages`) + latest `floor(limit/2)` (min 1) inbound (`inbound_messages`) rows, merges them, sorts desc by `createdAt`, returns the merged array. Default `limit=10` yields the 10+5 shape the story spec calls for. Per-stream sort + cap happens in JS (the shim doesn't do ORDER BY / LIMIT). `from` field maps `messages.from_number` for outbound rows and `inbound_messages.from_phone` for inbound rows.
+- Created `src/app/app/dashboard/page.tsx` — server component rendering: (1) two stat cards (unread inbound + 30-day outbound total), (2) a hand-rolled SVG mini bar chart of the 30-day volume (`<rect>` per day with `data-date` + `data-count`, `<text>` ticks every 5 days, viewBox-based for fluid scaling), (3) a `Table` of the recent-activity merge with a directional pill (Outbound = emerald / Inbound = sky) and a per-row `data-testid="dashboard-activity-row-<source>-<id>"`. Empty-state `<EmptyState>` in either the chart section (impossible — series always has 30 entries) or the activity section (when merged feed is empty).
+- Refactored `src/app/page.tsx` layout — no wait, that wasn't touched. **The dashboard page is new**; no rewrite of `src/app/app/page.tsx` or `src/app/app/layout.tsx` was needed.
+
+- **Tests added (35 new):**
+  - `src/lib/dashboard.test.ts` (27 total):
+    - `__getDashboardStatsInternal` (4): counts unread inbound, multi-tenant scoped, empty inbox returns 0, throws on non-positive userId.
+    - `__getMessageVolume30dInternal` (13): exactly 30 entries; fills gap days; aggregates multiple messages on the same day; counts regardless of status; excludes rows older than 29 days; includes rows from (today − 29); sorts oldest → newest; anchors on `now`'s UTC day; every date is `YYYY-MM-DD`; multi-tenant isolation; all-zero for empty user; throws on non-positive userId; throws on invalid `now`.
+    - `__getRecentActivityInternal` (10): merges + sorts desc; default limit = 10 outbound + 5 inbound; truncates each stream to its cap; per-stream desc sort; maps `from` correctly per source; honors explicit (smaller) limit; multi-tenant isolation; empty user returns []; throws on non-positive userId; throws on non-positive limit.
+  - `src/app/app/dashboard/page.test.tsx` (8): renders header; stat cards with zero values; chart renders 30 bars even when empty; empty activity section renders `<EmptyState>`; chart shows counts when messages exist; activity table renders both directions; multi-tenant isolation (other user's messages + inbound don't leak); unread stat reflects unread inbound.
+
+- **Verification:**
+  - `pnpm test --run` → 38 files / 597 tests (was 36 / 562). +35 net new.
+  - `pnpm run build` → 18 routes (was 17). New: `/app/dashboard` (dynamic). Build clean.
+  - `pnpm exec tsc --noEmit` → zero errors.
+
+- **Learnings / new patterns:**
+  - **`getDashboardStats` refactor — promote helper functions to the same `__<name>Internal` split the actions use.** When a story adds new helpers to a module that already has a `(userId, db)`-shaped helper, evolve the older one to `(userId)` → `__internal({ userId, db })` so the module's public surface is consistent. Update all in-repo callers (including test files for sibling stories that exercise the helper, e.g. `src/lib/actions/inbox.test.ts`) to use the `__internal` seam. The split unlocks three things: (a) the public surface matches the story spec, (b) tests can run the helper against a fresh `createTestDb()` without `__resetTestDbForTests()` + `__setCurrentUserIdForTests()` boilerplate, (c) adding a `now` / `since` knob to a single internal doesn't require a new export for the public wrapper. The dashboard module is now the canonical example of this pattern in a non-`"use server"` lib file.
+  - **No `Card` primitive — render card-shaped `<article>` / `<section>` divs directly.** US-020's spec said "use the existing Card primitive" but the project has no `Card` component (only `Button`, `Input`, `Table`, `EmptyState`, `Dialog`, `DialogActions` in `src/components/ui/`). The convention is a `<section>` or `<article>` with `"rounded-lg border border-zinc-200 bg-white p-5"` (with the matching `dark:` variants). When a story mentions a primitive the codebase doesn't yet have, render the existing inline pattern rather than introducing a new component — and call out the missing-primitive gap in the progress notes.
+  - **Hand-rolled SVG charts over chart libraries for small, decorative visualizations.** A 30-bar histogram is one `<rect>` per day + sparse `<text>` ticks. A chart library (recharts, visx, chart.js) would add tens of KB for one non-interactive tile. Keep the SVG in the server component — no `"use client"` needed because there's no interactivity (a `<title>` child on each `<rect>` gives a free native tooltip).
+  - **Coerce `created_at` / `received_at` defensively.** The in-memory shim's `insert` writes `new Date()`, but real Postgres `timestamptz` may round-trip as either `Date` or ISO string. Helpers reading these columns (e.g. `coerceTimestamp` in `dashboard.ts`) should accept either shape rather than relying on a single type. This bit me on the page test first — the seeded Date was already a Date, so `instanceof Date` short-circuits; but anything fed from `realtime` / PGlite later needs the string-fallback branch.
+  - **Sparse x-axis ticks for narrow charts.** 30 text labels in a 600-unit-wide SVG crowds the axis. Tick every 5th day + the final tick keeps it legible (4 labels for 30 bars: days 0, 5, 10, 15, 20, 25, 29). The `<text>` siblings can skip via `null` returns in the map. The `<rect>` chart bars themselves remain unconditional so a screen reader sees the full series even if the tick labels are sparse.
+  - **Multi-stream merge = per-stream sort + cap, then merge-sort.** Without `ORDER BY` / `LIMIT` in the shim, fetch each stream's full rowset, sort + slice in JS, concat, final sort by `createdAt` desc. The final desc sort eats the upstream ordering — per-stream sorting is just there to honor the literal cap (e.g. "latest 10 outbound" means newest 10, not arbitrary 10).

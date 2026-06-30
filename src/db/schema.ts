@@ -62,6 +62,12 @@ export const scheduledJobStatusEnum = pgEnum("scheduled_job_status", [
 
 export const webhookSourceEnum = pgEnum("webhook_source", ["stripe", "twilio"]);
 
+export const checkoutSessionStatusEnum = pgEnum("checkout_session_status", [
+  "pending",
+  "completed",
+  "cancelled",
+]);
+
 // ============================================================================
 // Tables
 // ============================================================================
@@ -286,6 +292,11 @@ export const inboundMessages = pgTable(
     receivedAt: timestamp("received_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // Read state for the inbox view (`/app/inbox`). Defaults to
+    // `false` so a freshly-arrived inbound is unread until the user
+    // explicitly marks it. Flipped via `markReadAction` /
+    // `markAllReadAction` in `src/lib/actions/inbox.ts`.
+    read: boolean("read").notNull().default(false),
   },
   (table) => [
     uniqueIndex("inbound_messages_twilio_sid_idx").on(table.twilioMessageSid),
@@ -342,6 +353,44 @@ export const webhookEvents = pgTable(
   ],
 );
 
+/**
+ * Stripe (or mock) checkout sessions for credit-package purchases.
+ *
+ * - One row per checkout attempt. `stripeSessionId` is the vendor's id
+ *   (for the mock we synthesize a `mock_cs_<uuid>` so external lookups
+ *   behave identically to a real Stripe session).
+ * - `status` drives the lifecycle:
+ *     - `pending`   — session was created and is awaiting payment / webhook.
+ *     - `completed` — webhook fired (real) or `/api/dev/stripe/confirm` was hit (mock).
+ *     - `cancelled` — user backed out of the checkout flow.
+ * - `completedAt` is null until the session is completed; the webhook
+ *   handler is responsible for setting it in the same transaction that
+ *   flips `status` to `completed`.
+ */
+export const checkoutSessions = pgTable(
+  "checkout_sessions",
+  {
+    id: serial("id").primaryKey(),
+    userId: serial("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    stripeSessionId: text("stripe_session_id").notNull(),
+    packageCredits: integer("package_credits").notNull(),
+    priceUsdCents: integer("price_usd_cents").notNull(),
+    status: checkoutSessionStatusEnum("status").notNull().default("pending"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("checkout_sessions_stripe_session_id_idx").on(
+      table.stripeSessionId,
+    ),
+    index("checkout_sessions_user_id_idx").on(table.userId),
+  ],
+);
+
 // ============================================================================
 // Relations
 // ============================================================================
@@ -358,6 +407,7 @@ export const usersRelations = relations(users, ({ one, many }) => ({
   inboundMessages: many(inboundMessages),
   scheduledJobs: many(scheduledJobs),
   creditTransactions: many(creditTransactions),
+  checkoutSessions: many(checkoutSessions),
 }));
 
 export const accountsRelations = relations(accounts, ({ one }) => ({
@@ -414,6 +464,16 @@ export const inboundMessagesRelations = relations(inboundMessages, ({ one }) => 
   }),
 }));
 
+export const checkoutSessionsRelations = relations(
+  checkoutSessions,
+  ({ one }) => ({
+    user: one(users, {
+      fields: [checkoutSessions.userId],
+      references: [users.id],
+    }),
+  }),
+);
+
 // ============================================================================
 // Convenience: keep the `now()` default in code in case we ever need it
 // outside of column defaults.
@@ -447,3 +507,5 @@ export type ScheduledJob = typeof scheduledJobs.$inferSelect;
 export type NewScheduledJob = typeof scheduledJobs.$inferInsert;
 export type WebhookEvent = typeof webhookEvents.$inferSelect;
 export type NewWebhookEvent = typeof webhookEvents.$inferInsert;
+export type CheckoutSession = typeof checkoutSessions.$inferSelect;
+export type NewCheckoutSession = typeof checkoutSessions.$inferInsert;
