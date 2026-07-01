@@ -94,7 +94,17 @@ export async function requireUser(): Promise<RequireUserResult> {
         ) {
           return { id: parsed.id, row: parsed.row };
         }
-      } catch {
+        // Cookie was present but the payload was malformed (id
+        // missing or non-numeric, row missing, etc.) — surface
+        // that explicitly so the user can re-login instead of
+        // silently falling through to a different cookie path.
+        throw new Error(
+          "Unauthorized: __user-cookie is malformed (missing or invalid id/row)",
+        );
+      } catch (err) {
+        if (err instanceof Error && err.message.startsWith("Unauthorized")) {
+          throw err;
+        }
         throw new Error("Unauthorized: malformed __user-cookie");
       }
     }
