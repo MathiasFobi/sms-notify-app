@@ -8,13 +8,18 @@
  * server component.
  *
  * Uses `useTransition` so the submit button shows a "Requesting…"
- * state without blocking the rest of the page.
+ * state without blocking the rest of the page. After the action
+ * succeeds we refresh the router so the server re-renders the
+ * sender-IDs list (the in-memory DB on Vercel is per-function, so
+ * the refresh also ensures the freshly-inserted row shows up).
  */
 
 import { useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/cn";
+import { useToast } from "@/components/ui/toast";
 import { requestSenderIdAction } from "@/lib/actions/sender-ids";
 
 export interface RequestSenderIdFormProps {
@@ -23,6 +28,8 @@ export interface RequestSenderIdFormProps {
 
 export function RequestSenderIdForm({ className }: RequestSenderIdFormProps) {
   const [isPending, startTransition] = useTransition();
+  const router = useRouter();
+  const { toast } = useToast();
 
   function handleSubmit(formData: FormData) {
     const value = formData.get("value");
@@ -30,8 +37,23 @@ export function RequestSenderIdForm({ className }: RequestSenderIdFormProps) {
       // Browser-side validation; the server action also validates.
       return;
     }
+    const trimmed = value.trim();
     startTransition(async () => {
-      await requestSenderIdAction({ value: value.trim() });
+      try {
+        await requestSenderIdAction({ value: trimmed });
+        toast({
+          title: "Sender ID registered",
+          description: `${trimmed} is now approved and set as your default.`,
+          variant: "success",
+        });
+        router.refresh();
+      } catch (err) {
+        toast({
+          title: "Couldn't register sender ID",
+          description: err instanceof Error ? err.message : String(err),
+          variant: "error",
+        });
+      }
     });
   }
 

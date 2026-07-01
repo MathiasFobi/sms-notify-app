@@ -36,7 +36,7 @@ export default async function SendPage() {
   const db = getTestDb();
 
   const senderIdRows = await db.select("sender_ids", { user_id: user.id });
-  const senderIds: SenderIdRow[] = senderIdRows
+  const dbSenderIds: SenderIdRow[] = senderIdRows
     .map((r) => ({
       id: r.id as number,
       value: String(r.value ?? ""),
@@ -50,6 +50,26 @@ export default async function SendPage() {
       ? (user.row.twilio_from_number as string)
       : null;
 
+  // MOCK-DATA BUILD: synthesize the current default sender ID from
+  // the cookie (the only persistent store) when the in-memory DB
+  // row is gone. Matches the same synthesis on the /app/sender-ids
+  // page. Drop this when the real DB lands.
+  const seen = new Set<string>();
+  const senderIds: SenderIdRow[] = [];
+  if (defaultFromNumber) {
+    senderIds.push({
+      id: -1,
+      value: defaultFromNumber,
+      createdAt: new Date(0),
+    });
+    seen.add(defaultFromNumber);
+  }
+  for (const r of dbSenderIds) {
+    if (seen.has(r.value)) continue;
+    senderIds.push(r);
+    seen.add(r.value);
+  }
+
   const senderIdsForForm = senderIds.map((s) => ({
     id: s.id,
     value: s.value,
@@ -57,8 +77,8 @@ export default async function SendPage() {
   }));
 
   return (
-    <div className={cn("mx-auto w-full max-w-4xl px-6 py-10")}>
-      <header className={cn("mb-8")}>
+    <div>
+      <header className="mb-6">
         <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">
           Send an SMS
         </h1>

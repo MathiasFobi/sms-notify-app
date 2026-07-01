@@ -66,7 +66,7 @@ export default async function SenderIdsPage() {
   const db = getTestDb();
 
   const senderIdRows = await db.select("sender_ids", { user_id: user.id });
-  const senderIds: SenderIdRow[] = senderIdRows
+  const dbSenderIds: SenderIdRow[] = senderIdRows
     .map((r) => ({
       id: r.id as number,
       value: String(r.value ?? ""),
@@ -77,9 +77,39 @@ export default async function SenderIdsPage() {
 
   const currentDefault = (user.row.twilio_from_number as string | null) ?? null;
 
+  // MOCK-DATA BUILD: Vercel serverless is per-function, so the
+  // in-memory `sender_ids` table is wiped between requests. The
+  // user's `twilio_from_number` is the only piece that persists
+  // (via the `__user-cookie`). We synthesize a "current default"
+  // row from the cookie so the user always sees their working
+  // sender ID even when the DB-side row is gone. When the real DB
+  // lands, drop the synthesis and just trust the table.
+  const synthesizedRow: SenderIdRow | null = currentDefault
+    ? {
+        id: -1,
+        value: currentDefault,
+        status: "approved",
+        createdAt: new Date(0),
+      }
+    : null;
+
+  // Merge: synthesized row first if it exists, then any DB rows
+  // for the same value get de-duped.
+  const seen = new Set<string>();
+  const senderIds: SenderIdRow[] = [];
+  if (synthesizedRow) {
+    senderIds.push(synthesizedRow);
+    seen.add(synthesizedRow.value);
+  }
+  for (const r of dbSenderIds) {
+    if (seen.has(r.value)) continue;
+    senderIds.push(r);
+    seen.add(r.value);
+  }
+
   return (
-    <div className={cn("mx-auto w-full max-w-4xl px-6 py-10")}>
-      <header className={cn("mb-8")}>
+    <div>
+      <header className="mb-6">
         <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">
           Sender IDs
         </h1>
@@ -101,8 +131,10 @@ export default async function SenderIdsPage() {
           Request a new sender ID
         </h2>
         <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-500">
-          Requests start as <span className="font-medium">pending</span> and
-          move to <span className="font-medium">approved</span> once verified.
+          Mock-data build: requests are auto-approved and set as your
+          default on the spot. In production, requests start as{" "}
+          <span className="font-medium">pending</span> and move to{" "}
+          <span className="font-medium">approved</span> after verification.
         </p>
         <div className="mt-4">
           <RequestSenderIdForm />
@@ -136,11 +168,12 @@ export default async function SenderIdsPage() {
                 {senderIds.map((s) => {
                   const isDefault = currentDefault === s.value;
                   return (
-                    <TableRow key={s.id}>
+                    <TableRow key={s.id} data-testid={`sender-id-row-${s.id}`}>
                       <TableCell>
                         <span className="font-mono text-sm">{s.value}</span>
                         {isDefault ? (
                           <span
+                            data-testid={`sender-id-default-${s.id}`}
                             className={cn(
                               "ml-2 inline-flex items-center rounded-full px-2 py-0.5",
                               "text-[10px] font-medium uppercase tracking-wide",

@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
   __resetCurrentUserForTests,
@@ -9,6 +9,17 @@ import {
   getTestDb,
   type TestDb,
 } from "@/test/db";
+
+// Stub next/navigation hooks — the request form uses `useRouter()`,
+// and `renderToStaticMarkup` doesn't mount an app router context.
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({
+    refresh: () => undefined,
+    push: () => undefined,
+    back: () => undefined,
+  }),
+  usePathname: () => "/app/sender-ids",
+}));
 
 /**
  * Render the /app/sender-ids page for an authenticated user.

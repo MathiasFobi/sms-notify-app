@@ -38,7 +38,7 @@ describe("__requestSenderIdInternal()", () => {
     await seedUser(db, 2, "bob@example.com");
   });
 
-  it("inserts a sender_ids row with status='pending' for the current user", async () => {
+  it("inserts a sender_ids row with status='approved' (mock auto-approve) for the current user", async () => {
     const inserted = await __requestSenderIdInternal({
       userId: 1,
       value: "MyBrand",
@@ -54,8 +54,16 @@ describe("__requestSenderIdInternal()", () => {
       id: inserted.id,
       user_id: 1,
       value: "MyBrand",
-      status: "pending",
+      // MOCK-DATA BUILD: auto-approves on request so the flow
+      // works without an admin UI. When the real DB lands this
+      // will flip back to 'pending'.
+      status: "approved",
     });
+
+    // The mock-build also sets this value as the user's default
+    // `twilio_from_number` on the same call.
+    const users = await db.select("users", { id: 1 });
+    expect(users[0]?.twilio_from_number).toBe("MyBrand");
   });
 
   it("scopes the insert to the user — other users do not see the row", async () => {
@@ -256,14 +264,14 @@ describe("public sender-ids server actions", () => {
   });
 
   describe("requestSenderIdAction()", () => {
-    it("inserts a pending row scoped to the current user", async () => {
+    it("inserts an approved row scoped to the current user (mock auto-approve)", async () => {
       expect(await db.select("sender_ids", { user_id: 1 })).toHaveLength(0);
 
       await requestSenderIdAction({ value: "ViaAuth" });
 
       const after = await db.select("sender_ids", { user_id: 1 });
       expect(after).toHaveLength(1);
-      expect(after[0]).toMatchObject({ value: "ViaAuth", status: "pending" });
+      expect(after[0]).toMatchObject({ value: "ViaAuth", status: "approved" });
     });
 
     it("scopes to whichever user the override currently points at", async () => {

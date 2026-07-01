@@ -118,8 +118,21 @@ export async function __requestSenderIdInternal(
   const inserted = await db.insert("sender_ids", {
     user_id: userId,
     value: trimmed,
-    status: "pending",
+    // MOCK-DATA BUILD: in production this would start as `'pending'`
+    // and flip to `'approved'` only after an admin (US-019) or
+    // upstream Twilio verification approves the request. For the
+    // mock build we auto-approve so the request → usable-ID flow
+    // works end-to-end without requiring an admin UI that doesn't
+    // exist yet. When the real DB lands, restore `'pending'` here
+    // and add the admin approval path.
+    status: "approved",
   });
+  // MOCK-DATA BUILD: also set this value as the user's default
+  // `twilio_from_number` so the in-memory DB's per-request row
+  // update is reflected on the very next render (and the cookie
+  // carries the user identity forward). On the real DB this is
+  // a separate `setDefaultSenderIdAction` call.
+  await db.update("users", { id: userId }, { twilio_from_number: trimmed });
   return { id: inserted.id as number };
 }
 
