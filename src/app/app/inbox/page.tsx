@@ -1,18 +1,9 @@
-import { cn } from "@/lib/cn";
 import { requireUser } from "@/lib/auth/require-user";
 import { getTestDb } from "@/test/db";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Button } from "@/components/ui/button";
 import { markAllReadAction, markReadAction } from "@/lib/actions/inbox";
-import { MarkReadButton } from "./_components/mark-read-button";
+import { sendSmsAction } from "@/lib/actions/send";
+import { InboxSplit, type InboxThread } from "./_components/inbox-split";
 
 /**
  * /app/inbox — list the current user's inbound messages and let
@@ -46,35 +37,6 @@ interface InboundMessageRow {
   read: boolean;
 }
 
-/**
- * Inline server action bound to the per-row Mark read button.
- * Delegates to the exported `markReadAction` in
- * `src/lib/actions/inbox.ts`. Mirrors the
- * `setDefaultSenderIdAction` / `cancelScheduledAction` pattern.
- */
-async function markReadFormAction(formData: FormData): Promise<void> {
-  "use server";
-  const idRaw = formData.get("id");
-  if (typeof idRaw !== "string") return;
-  const id = Number.parseInt(idRaw, 10);
-  if (!Number.isInteger(id) || id <= 0) return;
-  await markReadAction({ id });
-}
-
-/**
- * Inline server action for the "Mark all read" button at the top of
- * the table. Delegates to `markAllReadAction`.
- */
-async function markAllReadFormAction(_formData: FormData): Promise<void> {
-  "use server";
-  await markAllReadAction();
-}
-
-function formatDate(d: Date | null): string {
-  if (!d) return "—";
-  return d.toISOString().replace("T", " ").replace(/\.\d{3}Z$/, " UTC");
-}
-
 export default async function InboxPage() {
   const user = await requireUser();
   const db = getTestDb();
@@ -92,38 +54,43 @@ export default async function InboxPage() {
 
   const unreadCount = messages.filter((m) => !m.read).length;
 
+  // Sender IDs for the reply box — same source as the Send page.
+  const senderIdRows = await db.select("sender_ids", { user_id: user.id });
+  const senderIds = senderIdRows
+    .map((r) => ({
+      id: r.id as number,
+      value: String(r.value ?? ""),
+      isDefault:
+        typeof user.row.twilio_from_number === "string" &&
+        r.value === user.row.twilio_from_number,
+    }))
+    .sort((a, b) => a.id - b.id);
+
+  const defaultFromNumber =
+    typeof user.row.twilio_from_number === "string" &&
+    user.row.twilio_from_number.length > 0
+      ? (user.row.twilio_from_number as string)
+      : null;
+
   return (
-    <div className={cn("mx-auto w-full max-w-4xl px-6 py-10")}>
-      <header className={cn("mb-8 flex flex-wrap items-end justify-between gap-4")}>
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">
-            Inbox
-          </h1>
-          <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-            Inbound text messages received on your Twilio number.{" "}
-            {unreadCount > 0 ? (
-              <span data-testid="inbox-unread-count">
-                <span className="font-medium text-zinc-900 dark:text-zinc-100">
-                  {unreadCount}
-                </span>{" "}
-                unread.
-              </span>
-            ) : (
-              <span data-testid="inbox-unread-count">All caught up.</span>
-            )}
-          </p>
-        </div>
-        {unreadCount > 0 ? (
-          <form action={markAllReadFormAction} data-testid="inbox-mark-all-form">
-            <Button
-              type="submit"
-              variant="secondary"
-              data-testid="inbox-mark-all-button"
-            >
-              Mark all read
-            </Button>
-          </form>
-        ) : null}
+    <div>
+      <header className="mb-6">
+        <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">
+          Inbox
+        </h1>
+        <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+          Inbound text messages received on your Twilio number.{" "}
+          {unreadCount > 0 ? (
+            <span data-testid="inbox-unread-count">
+              <span className="font-medium text-zinc-900 dark:text-zinc-100">
+                {unreadCount}
+              </span>{" "}
+              unread.
+            </span>
+          ) : (
+            <span data-testid="inbox-unread-count">All caught up.</span>
+          )}
+        </p>
       </header>
 
       {messages.length === 0 ? (
@@ -134,82 +101,30 @@ export default async function InboxPage() {
           cta={{ label: "Send a test message", href: "/app/send" }}
         />
       ) : (
-        <div
-          className={cn(
-            "overflow-hidden rounded-lg border border-zinc-200 bg-white",
-            "dark:border-zinc-800 dark:bg-zinc-950",
-          )}
-        >
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>From</TableHead>
-                <TableHead>Body</TableHead>
-                <TableHead>Received at</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {messages.map((m) => (
-                <TableRow key={m.id} data-testid={`inbox-row-${m.id}`}>
-                  <TableCell>
-                    <span className="font-mono text-sm">{m.fromPhone}</span>
-                  </TableCell>
-                  <TableCell>
-                    <span className="line-clamp-2 max-w-md text-sm text-zinc-700 dark:text-zinc-300">
-                      {m.body}
-                    </span>
-                  </TableCell>
-                  <TableCell>
-                    <span className="text-sm text-zinc-700 dark:text-zinc-300">
-                      {formatDate(m.receivedAt)}
-                    </span>
-                  </TableCell>
-                  <TableCell>
-                    {m.read ? (
-                      <span
-                        data-testid={`inbox-status-${m.id}`}
-                        className={cn(
-                          "inline-flex items-center rounded-full px-2 py-0.5",
-                          "text-xs font-medium",
-                          "bg-zinc-100 text-zinc-600",
-                          "dark:bg-zinc-800 dark:text-zinc-400",
-                        )}
-                      >
-                        read
-                      </span>
-                    ) : (
-                      <span
-                        data-testid={`inbox-status-${m.id}`}
-                        className={cn(
-                          "inline-flex items-center rounded-full px-2 py-0.5",
-                          "text-xs font-medium",
-                          "bg-emerald-100 text-emerald-800",
-                          "dark:bg-emerald-900/30 dark:text-emerald-300",
-                        )}
-                      >
-                        unread
-                      </span>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    {m.read ? (
-                      <span className="text-xs text-zinc-400 dark:text-zinc-600">
-                        —
-                      </span>
-                    ) : (
-                      <MarkReadButton
-                        messageId={m.id}
-                        action={markReadFormAction}
-                      />
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+        <InboxSplit
+          threads={messages.map<InboxThread>((m) => ({
+            id: m.id,
+            fromPhone: m.fromPhone,
+            body: m.body,
+            receivedAt: m.receivedAt,
+            read: m.read,
+          }))}
+          defaultFromNumber={defaultFromNumber}
+          senderIds={senderIds}
+          markAllReadAction={async () => {
+            "use server";
+            await markAllReadAction();
+          }}
+          markReadAction={markReadAction}
+          sendReplyAction={async (args) => {
+            "use server";
+            return sendSmsAction({
+              to: args.to,
+              body: args.body,
+              fromNumber: args.fromNumber,
+            });
+          }}
+        />
       )}
     </div>
   );
