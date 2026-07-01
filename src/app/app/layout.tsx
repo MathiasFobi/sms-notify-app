@@ -1,6 +1,8 @@
 import { cn } from "@/lib/cn";
 import { AppSidebar } from "@/components/app-sidebar";
 import { AppBottomNav } from "@/components/app-bottom-nav";
+import { ToastProvider } from "@/components/ui/toast";
+import { PageHeader } from "@/components/page-header";
 
 /**
  * /app — client portal (authenticated). Renders a sidebar nav (desktop)
@@ -15,17 +17,24 @@ export default function AppPortalLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div
-      className={cn(
-        "flex min-h-full flex-1",
-        "bg-zinc-50 dark:bg-zinc-950"
-      )}
-    >
-      <AppSidebar />
-      <div className="flex flex-1 flex-col min-w-0">
-        <main className="flex-1 pb-20 md:pb-0">{children}</main>
-        <AppBottomNav />
+    <ToastProvider>
+      <div
+        className={cn(
+          "flex min-h-full flex-1",
+          "bg-zinc-50 dark:bg-zinc-950"
+        )}
+      >
+        <AppSidebar />
+        <div className="flex flex-1 flex-col min-w-0">
+          <main className="flex-1 pb-20 md:pb-0">
+            <div className="mx-auto w-full max-w-5xl px-4 sm:px-6 py-6 sm:py-10">
+              <PageHeader />
+              {children}
+            </div>
+          </main>
+          <AppBottomNav />
+        </div>
       </div>
-    </div>
+    </ToastProvider>
   );
 }

@@ -144,6 +144,31 @@ describe("__getDashboardStatsInternal", () => {
     expect(stats.unread).toBe(2);
   });
 
+  it("returns the user's account credits", async () => {
+    await seedUser(db, 1);
+    await db.insert("accounts", { user_id: 1, credits: 250 });
+    const stats = await __getDashboardStatsInternal({ userId: 1, db });
+    expect(stats.credits).toBe(250);
+  });
+
+  it("treats a missing account row as zero credits (low-balance CTA path)", async () => {
+    await seedUser(db, 1);
+    // No account insert.
+    const stats = await __getDashboardStatsInternal({ userId: 1, db });
+    expect(stats.credits).toBe(0);
+  });
+
+  it("does not leak credits across users", async () => {
+    await seedUser(db, 1);
+    await seedUser(db, 2);
+    await db.insert("accounts", { user_id: 1, credits: 100 });
+    await db.insert("accounts", { user_id: 2, credits: 999 });
+    const a = await __getDashboardStatsInternal({ userId: 1, db });
+    const b = await __getDashboardStatsInternal({ userId: 2, db });
+    expect(a.credits).toBe(100);
+    expect(b.credits).toBe(999);
+  });
+
   it("scopes by userId — multi-tenant isolation", async () => {
     await seedUser(db, 1);
     await seedUser(db, 2);

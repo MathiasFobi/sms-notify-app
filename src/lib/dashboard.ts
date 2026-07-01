@@ -38,6 +38,12 @@ export interface DashboardStats {
    * any future dashboard tile.
    */
   unread: number;
+  /**
+   * Authoritative credit balance from `accounts.credits`. This is
+   * the number shown in the dashboard's "credit balance" hero
+   * card. Drives the "buy credits" CTA when it drops to 0.
+   */
+  credits: number;
 }
 
 /**
@@ -76,7 +82,19 @@ export async function __getDashboardStatsInternal(args: {
     user_id: userId,
     read: false,
   });
-  return { unread: rows.length };
+  // Resolve the credit balance from the user's account row. The
+  // account is created at signup with `credits=0`; admin credit
+  // adjustments and Stripe checkout completions bump it. Missing
+  // account rows are treated as 0 — surface a low-balance CTA in
+  // the UI rather than throwing.
+  const accountRows = await db.select("accounts", { user_id: userId });
+  const credits =
+    accountRows.length > 0
+      ? typeof accountRows[0]!.credits === "number"
+        ? (accountRows[0]!.credits as number)
+        : 0
+      : 0;
+  return { unread: rows.length, credits };
 }
 
 // ============================================================================

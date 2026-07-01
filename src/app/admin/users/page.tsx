@@ -112,6 +112,7 @@ export default async function AdminUsersPage({ searchParams }: PageProps) {
 
       {users.length === 0 ? (
         <EmptyState
+          emoji="👥"
           title="No users found"
           description={
             query

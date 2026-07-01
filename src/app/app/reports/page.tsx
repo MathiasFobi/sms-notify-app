@@ -210,8 +210,10 @@ export default async function ReportsPage() {
         </h2>
         {delivery.perMessage.length === 0 ? (
           <EmptyState
+            emoji="📊"
             title="No messages in the last 30 days"
             description="Send a campaign or single message from the Send page and it will appear here."
+            cta={{ label: "Send a message", href: "/app/send" }}
           />
         ) : (
           <div

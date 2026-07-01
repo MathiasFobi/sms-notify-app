@@ -11,6 +11,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import type { ActivityItem, MessageVolumeDay } from "@/lib/dashboard";
+import { Coins, Send, Plus } from "lucide-react";
+import Link from "next/link";
 
 /**
  * /app/dashboard — landing page for the user portal.
@@ -71,20 +73,93 @@ export default async function DashboardPage() {
     getRecentActivity(user.id),
   ]);
 
+  const firstName =
+    typeof user.row.name === "string" && user.row.name.trim().length > 0
+      ? user.row.name.split(" ")[0]!
+      : null;
+
   return (
-    <div className={cn("mx-auto w-full max-w-5xl px-6 py-10")}>
-      <header className={cn("mb-8")}>
+    <div className="space-y-6 sm:space-y-8">
+      <header>
         <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">
-          Dashboard
+          {firstName ? `Welcome back, ${firstName}` : "Dashboard"}
         </h1>
         <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
           A quick look at your messaging activity over the last 30 days.
         </p>
       </header>
 
+      {/* ----- Credit balance hero card + Quick send pill ---------- */}
+      <section
+        className={cn(
+          "rounded-xl border border-zinc-200 dark:border-zinc-800",
+          "bg-gradient-to-br from-white via-white to-cyan-50/40",
+          "dark:from-zinc-950 dark:via-zinc-950 dark:to-cyan-950/20",
+          "p-5 sm:p-6",
+        )}
+        data-testid="dashboard-hero"
+      >
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div className="flex items-start gap-3 min-w-0">
+            <div
+              className={cn(
+                "shrink-0 h-10 w-10 rounded-full flex items-center justify-center",
+                stats.credits > 0
+                  ? "bg-cyan-100 text-cyan-700 dark:bg-cyan-950/60 dark:text-cyan-300"
+                  : "bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300",
+              )}
+            >
+              <Coins className="h-5 w-5" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                Credit balance
+              </p>
+              <p
+                data-testid="dashboard-credits-value"
+                data-value={stats.credits}
+                className="mt-0.5 text-3xl font-bold tabular-nums text-zinc-900 dark:text-zinc-50"
+              >
+                {stats.credits.toLocaleString()}
+                <span className="ml-1 text-base font-normal text-zinc-500 dark:text-zinc-400">
+                  credits
+                </span>
+              </p>
+              {stats.credits === 0 ? (
+                <p className="mt-1 text-xs text-rose-600 dark:text-rose-400">
+                  You're out of credits. Top up to keep sending.
+                </p>
+              ) : (
+                <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-500">
+                  Each outbound SMS costs 1 credit.
+                </p>
+              )}
+            </div>
+          </div>
+          <div className="flex items-center gap-2 sm:flex-col sm:items-stretch">
+            <Link
+              href="/app/send"
+              data-testid="dashboard-quick-send"
+              className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold bg-cyan-600 hover:bg-cyan-700 text-white transition"
+            >
+              <Send className="h-3.5 w-3.5" />
+              Quick send
+            </Link>
+            <Link
+              href="/app/billing"
+              data-testid="dashboard-buy-credits"
+              className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition"
+            >
+              <Plus className="h-3 w-3" />
+              {stats.credits === 0 ? "Buy credits" : "Top up"}
+            </Link>
+          </div>
+        </div>
+      </section>
+
       {/* ----- Stat cards --------------------------------------------- */}
       <section
-        className={cn("mb-10 grid gap-4 sm:grid-cols-2")}
+        className={cn("grid gap-4 sm:grid-cols-2")}
         data-testid="dashboard-stats"
       >
         <article
@@ -134,7 +209,7 @@ export default async function DashboardPage() {
       {/* ----- 30-day mini bar chart ---------------------------------- */}
       <section
         className={cn(
-          "mb-10 rounded-lg border border-zinc-200 bg-white p-5",
+          "rounded-lg border border-zinc-200 bg-white p-5",
           "dark:border-zinc-800 dark:bg-zinc-950",
         )}
         data-testid="dashboard-chart-section"
@@ -193,8 +268,10 @@ function VolumeChart({ series }: { series: MessageVolumeDay[] }) {
   if (series.length === 0) {
     return (
       <EmptyState
+        emoji="📊"
         title="No activity in the last 30 days"
         description="Send a message from the Send page and it will show up here."
+        cta={{ label: "Send a message", href: "/app/send" }}
       />
     );
   }
@@ -283,8 +360,10 @@ function ActivityList({ activity }: { activity: ActivityItem[] }) {
   if (activity.length === 0) {
     return (
       <EmptyState
+        emoji="📭"
         title="No recent activity"
         description="New outbound sends and inbound replies will show up here."
+        cta={{ label: "Send a message", href: "/app/send" }}
       />
     );
   }

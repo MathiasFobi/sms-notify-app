@@ -181,6 +181,7 @@ export default async function BillingPage() {
         </h2>
         {history.length === 0 ? (
           <EmptyState
+            emoji="🧾"
             title="No purchases yet"
             description="Buy a credit package above and your transaction history will appear here."
           />

@@ -139,7 +139,10 @@ describe("/app/dashboard page (US-020)", () => {
     __setCurrentUserIdForTests(1);
 
     const html = await renderPage();
-    expect(html).toContain("Dashboard");
+    // The header should be either "Welcome back, {name}" or a
+    // generic "Dashboard" — depending on whether the seeded user
+    // has a `name` set. We assert on the sub-headline copy which
+    // is stable across both render paths.
     expect(html).toMatch(/quick look at your messaging activity/);
   });
 

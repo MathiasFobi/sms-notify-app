@@ -128,8 +128,10 @@ export default async function InboxPage() {
 
       {messages.length === 0 ? (
         <EmptyState
+          emoji="📨"
           title="No inbound messages yet"
           description="When someone texts your Twilio number, the message will appear here."
+          cta={{ label: "Send a test message", href: "/app/send" }}
         />
       ) : (
         <div
